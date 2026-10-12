@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#08121e" />
+  <meta name="description" content="NetworkPulse AI — network flow observability, anomaly detection, and alert investigation console" />
+  <title>NetworkPulse AI — Observability Console</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <script defer src="/static/app.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Navigation">
+      <a class="brand" href="#overview" aria-label="NetworkPulse home">
+        <span class="brand-symbol" aria-hidden="true"><svg viewBox="0 0 40 40"><path d="M3 22H13L17 9L23 31L27 18H37" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span class="brand-word">NETWORK<span>PULSE</span><small>AI / OBSERVABILITY</small></span>
+      </a>
+      <p class="nav-caption">WORKSPACE</p>
+      <nav class="navigation">
+        <a class="nav-link current" href="#overview"><span>◫</span> Overview</a>
+        <a class="nav-link" href="#traffic"><span>⌁</span> Network traffic</a>
+        <a class="nav-link" href="#investigations"><span>◈</span> Investigations</a>
+        <a class="nav-link" href="#model"><span>◇</span> Model intelligence</a>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="side-mini"><span class="pulse"></span><div>FLOW PIPELINE<small id="pipeline-status">Checking readiness…</small></div></div>
+        <p>Flow metadata only. No packet payloads captured by the application.</p>
+        <a href="/docs" target="_blank" rel="noopener">OpenAPI Documentation ↗</a>
+      </div>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <div class="crumb">ENGINEERING / <strong>NETWORK OBSERVABILITY</strong></div>
+        <div class="top-actions"><span id="current-time" class="clock">—</span><span class="live-indicator"><i></i> DASHBOARD POLLING</span></div>
+      </header>
+      <section class="page-heading" id="overview">
+        <div><p class="eyebrow"><span class="signal-dot"></span> NETWORKPULSE // ANALYTICS CORE</p>
+          <h1>See the signals.<br/><span>Investigate anomalies.</span></h1>
+          <p class="lead">Network-flow observability, reproducible anomaly scoring, and auditable alert triage—unified in one engineering console.</p>
+          <div class="hero-pills"><span>● Flow metadata</span><span>● Isolation Forest</span><span>● Alert audit trail</span></div>
+        </div>
+        <div class="system-card"><p>SYSTEM STATUS</p><strong id="system-state">CHECKING</strong><div class="divider"></div><span id="model-source">Model status loading</span><div class="system-bars" aria-hidden="true"><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div></div>
+      </section>
+      <section class="metrics" aria-label="Key metrics">
+        <article class="metric"><div class="metric-label">INGESTED FLOWS <span class="icn">⌁</span></div><strong id="metric-flows">—</strong><span class="metric-note">Deduplicated metadata records</span></article>
+        <article class="metric"><div class="metric-label">FLAGGED ANOMALIES <span class="icn">◇</span></div><strong id="metric-anomalies">—</strong><span class="metric-note">Model-driven triage candidates</span></article>
+        <article class="metric"><div class="metric-label">OPEN INVESTIGATIONS <span class="icn">◎</span></div><strong id="metric-open">—</strong><span class="metric-note">Unresolved alert queue</span></article>
+        <article class="metric"><div class="metric-label">MEAN FLOW RISK <span class="icn">↗</span></div><strong id="metric-risk">—</strong><span class="metric-note">0–100 relative model score</span></article>
+      </section>
+      <section class="charts" id="traffic">
+        <article class="panel wide"><div class="panel-header"><div><span class="overline">01 // TRAFFIC INTELLIGENCE</span><h2>Traffic & anomaly timeline</h2></div><span class="small-badge">5-MIN UTC BUCKETS</span></div>
+          <canvas id="traffic-chart" height="260" aria-label="Flow volumes and flagged anomalies over time" role="img"></canvas>
+          <div class="legend"><span><i class="legend-a"></i>Flow volume</span><span><i class="legend-b"></i>Flagged anomalies</span></div>
+        </article>
+        <article class="panel protocols"><div class="panel-header"><div><span class="overline">02 // PROTOCOL MIX</span><h2>Traffic distribution</h2></div></div>
+          <div class="donut-wrap"><div id="proto-donut" class="donut" role="img" aria-label="Protocol distribution"><div><strong id="protocol-total">—</strong><small>flows</small></div></div></div>
+          <div class="protocol-list" id="protocol-legend"><span class="muted">Loading protocols…</span></div>
+        </article>
+      </section>
+      <section class="panel table-panel" id="investigations"><div class="panel-header"><div><span class="overline">03 // ALERT OPERATIONS</span><h2>Investigation queue</h2><p class="section-sub">Alert state changes are recorded in an audit log.</p></div><label class="filter-label" for="status-filter">Status <select id="status-filter"><option value="">All statuses</option><option value="open">Open</option><option value="investigating">Investigating</option><option value="resolved">Resolved</option><option value="false_positive">False positive</option></select></label></div>
+        <div class="table-scroll"><table><thead><tr><th>SEVERITY</th><th>SOURCE → DESTINATION</th><th>RISK</th><th>STATUS</th><th>REASON</th><th>ACTION</th></tr></thead><tbody id="alerts-body"><tr><td colspan="6">Loading alert queue…</td></tr></tbody></table></div>
+        <p class="table-note">A flagged flow is an investigation candidate, not proof of malicious activity. Use triage outcomes to distinguish false positives.</p>
+      </section>
+      <section class="panel model-panel" id="model"><div class="panel-header"><div><span class="overline">04 // DETECTOR INTEGRITY</span><h2>Model & evaluation provenance</h2></div><span class="small-badge gold">TIME-ORDERED SPLITS</span></div>
+        <div class="model-data"><div class="model-detail"><span>TRAINING SOURCE</span><strong id="model-data-source">—</strong></div><div class="model-detail"><span>TRAIN / CALIBRATION / HOLDOUT</span><strong id="model-splits">—</strong></div><div class="model-detail"><span>THRESHOLD QUANTILE</span><strong id="model-quantile">—</strong></div><div class="model-detail"><span>HOLDOUT F1</span><strong id="model-f1">—</strong></div></div>
+        <p class="model-warning">Synthetic demo evaluation is not real-world network intrusion detection performance. Baseline shifts, label availability, false positives and external validation need attention before operational use.</p>
+      </section>
+      <footer><span>NETWORKPULSE AI <i>•</i> Engineering preview v0.1.0</span><span>Designed for reproducible analysis, not automated blocking.</span></footer>
+      <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    </main>
+  </div>
+</body>
+</html>
