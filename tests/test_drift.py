@@ -18,4 +18,5 @@ def test_drift_and_alert_budget_signal():
     assert shifted["worst_psi"]>=0
     assert shifted["alerts"]>=0
     assert any(x["status"] in {"normal","warning","critical"} for x in shifted["features"])
-    with pytest.raises(ValueError):drift_report(d,[])
+    with pytest.raises(ValueError):
+        drift_report(d,[])

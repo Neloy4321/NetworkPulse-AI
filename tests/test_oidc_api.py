@@ -10,11 +10,15 @@ from networkpulse.security.oidc import Principal
 
 
 class FakeVerifier:
-    def __init__(self,*args,**kwargs):pass
+    def __init__(self,*args,**kwargs):
+        pass
     def verify(self,token):
-        if token=="viewer":return Principal("u1","viewer")
-        if token=="analyst":return Principal("u2","analyst")
-        if token=="admin":return Principal("u3","admin")
+        if token=="viewer":
+            return Principal("u1","viewer")
+        if token=="analyst":
+            return Principal("u2","analyst")
+        if token=="admin":
+            return Principal("u3","admin")
         raise HTTPException(401,detail="Invalid token")
 
 

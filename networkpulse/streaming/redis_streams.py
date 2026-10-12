@@ -7,7 +7,6 @@ replays and worker restarts do not create duplicate persisted flow alerts.
 from __future__ import annotations
 
 import json
-import time
 from collections.abc import Callable
 
 STREAM = "networkpulse:flow:stream"

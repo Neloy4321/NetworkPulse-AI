@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 
 import pytest
 
@@ -48,9 +47,11 @@ class FakeRedis:
 
 
 def test_queue_backpressure_and_serialization():
-    f=FakeRedis();q=FlowStream(f,max_backlog=100)
+    f=FakeRedis()
+    q=FlowStream(f,max_backlog=100)
     data=sample_flows(100)[0].model_dump(mode="json")
     q.enqueue(data)
     assert json.loads(f.messages[0]["event"])==data
     f.messages *= 100
-    with pytest.raises(BackpressureError):q.enqueue(data)
+    with pytest.raises(BackpressureError):
+        q.enqueue(data)

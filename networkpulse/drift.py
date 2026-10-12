@@ -30,7 +30,8 @@ def _frequencies(values: np.ndarray, edges: np.ndarray) -> np.ndarray:
 
 
 def population_stability_index(expected: list[float],observed: list[float]) -> float:
-    if len(expected)!=len(observed):raise ValueError("population bins differ")
+    if len(expected) != len(observed):
+        raise ValueError("population bins differ")
     eps=1e-6
     return float(sum((o-e)*math.log((o+eps)/(e+eps)) for e,o in zip(expected,observed)))
 

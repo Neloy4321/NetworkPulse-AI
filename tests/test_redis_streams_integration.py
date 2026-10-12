@@ -1,6 +1,5 @@
 """Real Redis 7 Streams integration; skipped without isolated CI Redis service."""
 
-import json
 import os
 import uuid
 
@@ -18,7 +17,8 @@ def test_redis_group_ack_retry_and_deadletter():
     stream="networkpulse:ci:"+uuid.uuid4().hex
     q=FlowStream(client,stream=stream,group="ci",max_backlog=100,max_attempts=2)
     try:
-        q.initialize();q.initialize()
+        q.initialize()
+        q.initialize()
         flow=sample_flows(100)[0].model_dump(mode="json")
         q.enqueue(flow)
         seen=[]
