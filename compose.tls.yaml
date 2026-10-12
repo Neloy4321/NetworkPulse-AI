@@ -1,0 +1,23 @@
+# Optional TLS staging example. DO NOT use without working external IdP and firewall.
+services:
+  api:
+    environment:
+      NETWORKPULSE_AUTH_MODE: oidc
+      NETWORKPULSE_OIDC_ISSUER: ${NETWORKPULSE_OIDC_ISSUER:?Required external identity issuer}
+      NETWORKPULSE_OIDC_AUDIENCE: ${NETWORKPULSE_OIDC_AUDIENCE:?Required audience}
+      NETWORKPULSE_OIDC_JWKS_URL: ${NETWORKPULSE_OIDC_JWKS_URL:?Required JWKS URL}
+  caddy:
+    image: caddy:2.8.4
+    restart: unless-stopped
+    environment:
+      NETWORKPULSE_DOMAIN: ${NETWORKPULSE_DOMAIN:?Required publicly resolving domain}
+    volumes:
+      - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [api]
+    ports: ['80:80', '443:443']
+    networks: [internal]
+volumes:
+  caddy_data:
+  caddy_config:

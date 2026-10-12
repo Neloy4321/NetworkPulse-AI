@@ -31,6 +31,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     make_session = build_sessions(settings.database_url)
     # Persist models trained offline; do not auto-train on incoming production data.
+    if settings.model_sha256 and settings.model_path.is_file():
+        from networkpulse.model_registry import sha256
+        if len(settings.model_sha256) != 64 or sha256(settings.model_path) != settings.model_sha256:
+            raise ValueError('Trusted model artifact SHA-256 verification failed')
     model = Detector.load(settings.model_path) if settings.model_path.is_file() else None
     verifier = (TokenVerifier(settings.oidc_issuer, settings.oidc_audience,
                               settings.oidc_jwks_url, settings.oidc_role_claim)
@@ -45,7 +49,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(
         lifespan=lifespan,
-        title="NetworkPulse AI", version="0.4.0",
+        title="NetworkPulse AI", version="0.5.0",
         description="Flow observability, anomaly triage and auditable review. Not an IDS replacement.",
     )
 

@@ -66,6 +66,26 @@ def main(argv: list[str] | None = None) -> int:
     benchmark.add_argument("--max-test", type=int, default=12000)
     benchmark.add_argument("--seed", type=int, default=42)
 
+    cic = cmd.add_parser("benchmark-cic", help="Offline CIC-IDS2017 CICFlowMeter CSV comparison")
+    cic.add_argument("--train", type=Path, required=True)
+    cic.add_argument("--test", type=Path, required=True)
+    cic.add_argument("--output", type=Path, default=Path("reports/cic-benchmark.json"))
+    cic.add_argument("--max-train", type=int, default=25000)
+    cic.add_argument("--max-test", type=int, default=15000)
+    cic.add_argument("--seed", type=int, default=42)
+
+    quality = cmd.add_parser("audit-data", help="Audit canonical flow metadata provenance and quality")
+    quality.add_argument("--data", type=Path, required=True)
+    quality.add_argument("--output", type=Path, default=Path("reports/data-quality.json"))
+
+    enrich = cmd.add_parser("enrich-offline", help="Offline asset and vetted indicator context report")
+    enrich.add_argument("--data", type=Path, required=True)
+    enrich.add_argument("--format", choices=["canonical", "zeek", "suricata"], required=True)
+    enrich.add_argument("--assets", type=Path, required=True)
+    enrich.add_argument("--indicators", type=Path, required=True)
+    enrich.add_argument("--output", type=Path, default=Path("reports/offline-enrichment.json"))
+    enrich.add_argument("--max-events", type=int, default=5000)
+
     collect = cmd.add_parser("collect", help="Tail a Zeek/Suricata JSONL file to Redis Streams")
     collect.add_argument("--path", type=Path, required=True)
     collect.add_argument("--format", choices=["zeek", "suricata", "canonical"], required=True)
@@ -147,6 +167,44 @@ def main(argv: list[str] | None = None) -> int:
             result = collector.poll_once() if args.once else collector.follow()
         if result is not None:
             print(json.dumps(result, indent=2))
+        return 0
+
+    if args.command == "enrich-offline":
+        from itertools import islice
+        from networkpulse.intel_enrichment import enrich_flow, load_assets, load_indicators
+        from networkpulse.data_quality import fingerprint
+        if not 1 <= args.max_events <= 100000:
+            parser.error("max-events must be 1..100000")
+        assets, indicators = load_assets(args.assets), load_indicators(args.indicators)
+        entries = [enrich_flow(e, assets, indicators)
+                   for e in islice(iter_jsonl(args.data, args.format), args.max_events)]
+        report = {"source": str(args.data), "source_sha256": fingerprint(args.data),
+                  "events_evaluated": len(entries), "indicator_count": len(indicators),
+                  "assets_count": len(assets), "items": entries,
+                  "warning": "No feed is independently validated and no matches prove an attack."}
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        print(json.dumps({"report": str(args.output),
+                          "events_evaluated": len(entries)}, indent=2))
+        return 0
+
+    if args.command == "audit-data":
+        from networkpulse.data_quality import write_quality_report
+        flows = list(iter_jsonl(args.data, 'canonical'))
+        report = write_quality_report(flows, args.data, args.output)
+        print(json.dumps({'report': str(args.output), 'records': report['record_count'],
+                          'duplicates': report['duplicate_count']}, indent=2))
+        return 0
+
+    if args.command == "benchmark-cic":
+        from networkpulse.evaluation.cic import evaluate_cic
+        report = evaluate_cic(args.train, args.test, seed=args.seed,
+                              max_train=args.max_train, max_test=args.max_test)
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n",
+                               encoding="utf-8")
+        print(json.dumps({"report": str(args.output), "test_rows": report["sample_counts"]["test"],
+                          "true_chronological_validation_verified": False}, indent=2))
         return 0
 
     if args.command == "benchmark-unsw":

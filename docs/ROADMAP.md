@@ -54,3 +54,9 @@ The distinction between demonstrated capability and future scope matters more th
 - Manual conservative unalerted-only JSONL archival with SHA256 manifest (not automated regulated retention).
 
 **Still requiring external evidence:** official benchmark evaluation, live OIDC PKCE with IdP, TLS reverse proxy and staging deployment, real Zeek/Suricata continuous log test, production durability/failover/load benchmarking, signed artifacts and native browser E2E deployment. Until then these checklist requirements are **not 100% verified**.
+
+## v0.5 data-contract readiness
+
+- CIC-IDS2017 FlowMeter CSV standalone evaluation adapter; local synthetic fixtures verify data parsing, duplicate exclusion and three comparison algorithms, not real benchmark accuracy.
+- Canonical data quality and SHA-256 lineage audit, optional model-checksum enforcement, offline asset and indicator enrichment.
+- Multi-stage Docker recipe, TLS/OIDC proxy staging *example* and recurring dependency-audit workflow; production security and public deployment are **not verified**.

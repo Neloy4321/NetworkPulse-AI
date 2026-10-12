@@ -78,6 +78,17 @@ Additional CLI workflows:
 
 References: [Model lifecycle](docs/MODEL_LIFECYCLE.md) · [Retention](docs/RETENTION_AND_ARCHIVAL.md) · [Observability stack](docs/OBSERVABILITY_STACK.md) · [Evidence matrix](docs/RELEASE_STATUS.md).
 
+
+## v0.5 synthetic-first data readiness & deployment configuration
+
+**No external real-data upload is required to run or test this release.** Existing seeded flows and example Zeek/Suricata JSONL records remain the executable defaults. Additional **offline benchmark adapters** are ready for later official-data ingestion; there are no manufactured real benchmark scores.
+
+- `networkpulse benchmark-cic --train <operator-provided-train.csv> --test <disjoint-test.csv>`: CIC-IDS2017 CICFlowMeter CSV adapter, IF/LOF/rule comparison, file SHA-256, duplicate filtering. See [CIC compatibility](docs/CIC_DATASET_COMPATIBILITY.md).
+- `networkpulse audit-data --data examples/generated-demo.jsonl`: data quality & lineage audit with flow IDs, duplicate counts and file checksum.
+- `networkpulse enrich-offline --format zeek --data examples/zeek-conn.jsonl --assets assets.csv --indicators indicators.csv`: optional, local, operator-vetted asset/indicator context (no automatic blocking). See [Data quality and indicators](docs/DATA_QUALITY_AND_INDICATORS.md).
+- Optional `MODEL_SHA256` environment setting rejects unrecognized model files at API/worker startup before deserialization.
+- Multi-stage Python Dockerfile, manual TLS/OIDC staging example and scheduled dependency vulnerability auditing workflow. **None of these configurations demonstrates a completed public staging deployment, real IdP login or passed external security assessment.** See [TLS staging](docs/TLS_STAGING.md).
+
 ## Dashboard
 
 The custom browser console features flow counts, risk summaries, five-minute UTC traffic windows, protocol distribution, a reviewable alert queue, and transparent model provenance. The app uses **no remote frontend CDNs** and works on localhost.

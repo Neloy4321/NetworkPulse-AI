@@ -12,6 +12,7 @@ class Settings:
     database_url: str
     model_path: Path
     api_key: str
+    model_sha256: str = ""
     max_batch: int = 250
     risk_threshold: float = 0.0
     max_body_bytes: int = 1_000_000
@@ -42,6 +43,7 @@ class Settings:
             oidc_role_claim=os.getenv("NETWORKPULSE_OIDC_ROLE_CLAIM", "networkpulse_role"),
             database_url=os.getenv("DATABASE_URL", "sqlite:///./data/networkpulse.db"),
             model_path=Path(os.getenv("MODEL_PATH", "data/model.joblib")),
+            model_sha256=os.getenv("MODEL_SHA256", ""),
             api_key=key,
             max_batch=int(os.getenv("MAX_BATCH", "250")),
             max_body_bytes=int(os.getenv("MAX_BODY_BYTES", "1000000")),

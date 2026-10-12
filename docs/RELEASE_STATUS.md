@@ -20,3 +20,13 @@ The user will provide labeled real traffic / official benchmark files later. **N
 **Scope of local test:** Python tests exercise the actual source code. Service-dependent PostgreSQL and Redis tests run on GitHub Actions when the associated workflow completes; check the run result rather than assuming passing local tests imply passing CI.
 
 To upgrade a v0.1/v0.2 SQLite DB, stop the old API, back up `data/networkpulse.db`, install v0.4 into a separate directory or Git checkout, copy your **existing data/ directory**, run `networkpulse db upgrade`, then run `networkpulse bootstrap` and restart the API. Do not overwrite the only original model or SQLite database.
+
+## v0.5 additions (synthetic-first)
+
+- A **separate CIC-IDS2017 FlowMeter CSV evaluation adapter** joins the UNSW prepared-CSV benchmark path (official files still not supplied).
+- Canonical flow quality and SHA-256 provenance reporting.
+- Offline asset inventory and operator-vetted indicator enrichment (no automatic blocking, real feed not authenticated).
+- Optional serving/worker trusted model SHA-256 pinning.
+- Multi-stage container recipe, TLS/OIDC reverse-proxy **example**, and scheduled pip-audit workflow definition.
+
+No actual real-world detection measurements, HTTPS staging deployment, or browser OIDC login results have been produced by these additions. Complete engineering scope and real-world evidence remain separate.

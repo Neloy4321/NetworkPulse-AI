@@ -114,6 +114,10 @@ def process_events(queue: FlowStream, consumer: str, *, settings, once: bool = F
     from networkpulse.storage import build_sessions
 
     queue.initialize()
+    if settings.model_sha256:
+        from networkpulse.model_registry import sha256
+        if len(settings.model_sha256) != 64 or sha256(settings.model_path) != settings.model_sha256:
+            raise ValueError('Trusted model artifact SHA-256 verification failed')
     detector = Detector.load(settings.model_path)
     maker = build_sessions(settings.database_url)
 
