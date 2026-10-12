@@ -6,8 +6,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, JSON, String, create_engine, func, select
+from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, Index, Integer, JSON, String, create_engine, event, func, inspect, select, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
+
+
+# SQLite INTEGER retains its native signed 64-bit range and identity semantics.
+COUNTER_TYPE = BigInteger().with_variant(Integer(), "sqlite")
 
 
 def now_utc() -> datetime:
@@ -30,10 +34,10 @@ class NetworkEvent(Base):
     dst_port: Mapped[int] = mapped_column(Integer)
     proto: Mapped[str] = mapped_column(String(12))
     duration: Mapped[float] = mapped_column(Float)
-    orig_bytes: Mapped[int] = mapped_column(Integer)
-    resp_bytes: Mapped[int] = mapped_column(Integer)
-    orig_pkts: Mapped[int] = mapped_column(Integer)
-    resp_pkts: Mapped[int] = mapped_column(Integer)
+    orig_bytes: Mapped[int] = mapped_column(COUNTER_TYPE)
+    resp_bytes: Mapped[int] = mapped_column(COUNTER_TYPE)
+    orig_pkts: Mapped[int] = mapped_column(COUNTER_TYPE)
+    resp_pkts: Mapped[int] = mapped_column(COUNTER_TYPE)
     conn_state: Mapped[str] = mapped_column(String(24))
     anomaly_score: Mapped[float] = mapped_column(Float)
     risk: Mapped[int] = mapped_column(Integer)
@@ -67,6 +71,9 @@ class AlertAudit(Base):
 
 
 Index("idx_flow_timestamp_src", NetworkEvent.timestamp.desc(), NetworkEvent.src_ip)
+Index("idx_flow_anomalous_time", NetworkEvent.anomalous, NetworkEvent.timestamp.desc())
+Index("idx_flow_src_timestamp", NetworkEvent.src_ip, NetworkEvent.timestamp.desc())
+Index("idx_alert_status_created", Alert.status, Alert.created_at.desc())
 
 
 def build_sessions(database_url: str) -> sessionmaker[Session]:
@@ -78,7 +85,25 @@ def build_sessions(database_url: str) -> sessionmaker[Session]:
             if location not in {":memory:", ""}:
                 Path(location).parent.mkdir(parents=True, exist_ok=True)
     engine = create_engine(database_url, **options)
-    Base.metadata.create_all(engine)
+    if database_url.startswith("sqlite"):
+        # SQLite foreign key checks are off by default on many installations.
+        @event.listens_for(engine, "connect")
+        def enable_foreign_keys(dbapi_connection, _record):
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
+
+    # Never silently mutate a live database schema on API startup.
+    # Run `networkpulse db upgrade` before bootstrap/API startup.
+    inspector = inspect(engine)
+    if "alembic_version" not in inspector.get_table_names():
+        engine.dispose()
+        raise RuntimeError("Database is not migrated; run: networkpulse db upgrade")
+    with engine.connect() as connection:
+        version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one_or_none()
+    if version != "0002_counter_integrity":
+        engine.dispose()
+        raise RuntimeError("Database migration required; run: networkpulse db upgrade")
     return sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)
 
 

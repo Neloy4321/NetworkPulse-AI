@@ -36,7 +36,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(
         lifespan=lifespan,
-        title="NetworkPulse AI", version="0.1.0",
+        title="NetworkPulse AI", version="0.2.0",
         description="Flow observability, anomaly triage and auditable review. Not an IDS replacement.",
     )
 

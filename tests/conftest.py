@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from networkpulse.api import create_app
 from networkpulse.config import Settings
 from networkpulse.detector import train
+from networkpulse.migrations import upgrade_database
 from networkpulse.simulator import sample_flows
 
 
@@ -18,11 +19,13 @@ def trained_detector():
 def app_settings(tmp_path: Path, trained_detector):
     model_file = tmp_path / "model.joblib"
     trained_detector.save(model_file)
-    return Settings(
+    settings = Settings(
         database_url="sqlite:///" + str(tmp_path / "networkpulse.db"),
         model_path=model_file,
         api_key="local-test-api-key-strong-123",
     )
+    upgrade_database(settings.database_url)
+    return settings
 
 
 @pytest.fixture
