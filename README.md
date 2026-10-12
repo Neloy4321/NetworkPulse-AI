@@ -57,6 +57,27 @@ The original dashboard and v0.2 database correctness features are preserved. The
 
 **Not complete:** The user's full twelve-part production-readiness checklist is tracked explicitly in [Release Status](docs/RELEASE_STATUS.md) and [GitHub issue #2](https://github.com/Neloy4321/NetworkPulse-AI/issues/2). These features must not be misrepresented as a production IDS.
 
+
+## v0.4 upgrade — synthetic-first feature development
+
+New engineering implementations use **existing seeded synthetic flows and supplied Zeek/Suricata JSONL examples**. No real intrusion-detection performance is claimed. The v0.4 schema revision is **`0003_soc_accountability`**; upgrade explicitly before starting the API:
+
+```bash
+networkpulse db backup --output data/backup-before-v04.sqlite  # if SQLite DB already exists
+networkpulse db upgrade
+networkpulse bootstrap
+```
+
+New API endpoints include `GET /api/v1/alerts/{id}/detail`, `POST /api/v1/alerts/{id}/notes`, `PATCH /api/v1/alerts/{id}/assignment`, `GET /api/v1/alerts/export.csv`, and `GET /api/v1/intelligence/correlations`. Status history now records the authenticated actor. All mutating requests have configurable single-process rate limiting and request-body caps; OIDC remains deployment-configured and must be tested against a real IdP before any internet-facing use.
+
+Additional CLI workflows:
+
+- **Model lifecycle:** `networkpulse model-registry --help` — register, checksum, gate, shadow, promote and rollback local trusted model artifacts.
+- **Conservative retention:** `networkpulse archive --help` — dry-run first, export/checksum and archive only unalerted old flows.
+- **Monitoring:** `docker compose -f compose.yaml -f compose.observability.yaml up --build` enables opt-in Prometheus/Grafana configuration (live deployment not yet verified).
+
+References: [Model lifecycle](docs/MODEL_LIFECYCLE.md) · [Retention](docs/RETENTION_AND_ARCHIVAL.md) · [Observability stack](docs/OBSERVABILITY_STACK.md) · [Evidence matrix](docs/RELEASE_STATUS.md).
+
 ## Dashboard
 
 The custom browser console features flow counts, risk summaries, five-minute UTC traffic windows, protocol distribution, a reviewable alert queue, and transparent model provenance. The app uses **no remote frontend CDNs** and works on localhost.

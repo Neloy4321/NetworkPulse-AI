@@ -55,6 +55,8 @@ class Alert(Base):
     reasons: Mapped[list[str]] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    assigned_to: Mapped[str | None] = mapped_column(String(150))
+    notes: Mapped[list[AlertNote]] = relationship(back_populates="alert")
     event: Mapped[NetworkEvent] = relationship(back_populates="alert")
     history: Mapped[list[AlertAudit]] = relationship(back_populates="alert")
 
@@ -67,9 +69,22 @@ class AlertAudit(Base):
     new_status: Mapped[str] = mapped_column(String(20))
     note: Mapped[str] = mapped_column(String(1500))
     changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    actor: Mapped[str | None] = mapped_column(String(150))
     alert: Mapped[Alert] = relationship(back_populates="history")
 
 
+class AlertNote(Base):
+    __tablename__ = "alert_notes"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    alert_id: Mapped[int] = mapped_column(ForeignKey("alerts.id"), nullable=False)
+    actor: Mapped[str] = mapped_column(String(150), nullable=False)
+    note: Mapped[str] = mapped_column(String(1500), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    alert: Mapped[Alert] = relationship(back_populates="notes")
+
+
+Index("idx_alert_assignee", Alert.assigned_to)
+Index("idx_alert_notes_alert_date", AlertNote.alert_id, AlertNote.created_at)
 Index("idx_flow_timestamp_src", NetworkEvent.timestamp.desc(), NetworkEvent.src_ip)
 Index("idx_flow_anomalous_time", NetworkEvent.anomalous, NetworkEvent.timestamp.desc())
 Index("idx_flow_src_timestamp", NetworkEvent.src_ip, NetworkEvent.timestamp.desc())
@@ -101,7 +116,7 @@ def build_sessions(database_url: str) -> sessionmaker[Session]:
         raise RuntimeError("Database is not migrated; run: networkpulse db upgrade")
     with engine.connect() as connection:
         version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one_or_none()
-    if version != "0002_counter_integrity":
+    if version != "0003_soc_accountability":
         engine.dispose()
         raise RuntimeError("Database migration required; run: networkpulse db upgrade")
     return sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)

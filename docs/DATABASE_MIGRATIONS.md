@@ -5,7 +5,7 @@
 
 ## What changed
 
-- Alembic revisions: `0001_legacy_baseline` → `0002_counter_integrity`.
+- Alembic revisions: `0001_legacy_baseline` → `0002_counter_integrity` → `0003_soc_accountability`.
 - PostgreSQL `network_events.orig_bytes`, `resp_bytes`, `orig_pkts`, `resp_pkts` use `BIGINT`. SQLite's `INTEGER` already supports signed 64-bit values and is left intact.
 - Indexes optimized for `(anomalous, timestamp)`, `(src_ip, timestamp)` and `(status, created_at)`; their effectiveness on real workload still needs query-plan benchmarking.
 - Ingestion uses atomic PostgreSQL/SQLite `INSERT ... ON CONFLICT DO NOTHING ... RETURNING`, in bounded batches, with event and alert creation in **one transaction**.
@@ -47,7 +47,7 @@
 
 ## Existing legacy database migration
 
-An unversioned database with the expected original three tables is recognized as the v0.1 baseline, stamped with `0001_legacy_baseline`, then advanced to `0002_counter_integrity`. Unknown or partial legacy schemas are rejected. This operation **preserves preexisting network events and alert records** in the SQLite migration regression test.
+An unversioned database with the expected original three tables is recognized as the v0.1 baseline, stamped with `0001_legacy_baseline`, then advanced to `0002_counter_integrity` → `0003_soc_accountability`. Unknown or partial legacy schemas are rejected. This operation **preserves preexisting network events and alert records** in the SQLite migration regression test.
 
 If you already have an Alembic-managed database, rerunning `networkpulse db upgrade` is idempotent. Do not delete `alembic_version` manually.
 
@@ -80,3 +80,7 @@ Production implementation needs export/checksum verification, retention of linke
 | `networkpulse db backup --output ./db-snapshot.sqlite` | SQLite backup (refuses overwrite) |
 
 To use PostgreSQL, set `DATABASE_URL` for this process, along with the relevant database credentials. The DB subcommands do not need an API key.
+
+## v0.4 addendum
+
+Alembic revision `0003_soc_accountability` adds `alerts.assigned_to`, `alert_audit.actor`, and `alert_notes` with supporting indexes. Upgrades from the original v0.1 legacy schema or migrated v0.2 preserve existing event and alert IDs; new actor fields are null for historical operations. Tests exercise upgrades from both starting states. The same `networkpulse db upgrade` command applies, with an automatic SQLite pre-migration snapshot.

@@ -10,7 +10,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
 
-LATEST = "0002_counter_integrity"
+LATEST = "0003_soc_accountability"
 BASELINE = "0001_legacy_baseline"
 ROOT = Path(__file__).resolve().parent.parent
 

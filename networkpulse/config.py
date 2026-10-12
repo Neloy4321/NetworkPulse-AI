@@ -14,6 +14,8 @@ class Settings:
     api_key: str
     max_batch: int = 250
     risk_threshold: float = 0.0
+    max_body_bytes: int = 1_000_000
+    mutation_rate_per_minute: int = 120
     auth_mode: str = "local"
     oidc_issuer: str = ""
     oidc_audience: str = ""
@@ -42,4 +44,6 @@ class Settings:
             model_path=Path(os.getenv("MODEL_PATH", "data/model.joblib")),
             api_key=key,
             max_batch=int(os.getenv("MAX_BATCH", "250")),
+            max_body_bytes=int(os.getenv("MAX_BODY_BYTES", "1000000")),
+            mutation_rate_per_minute=int(os.getenv("MUTATION_RATE_PER_MINUTE", "120")),
         )

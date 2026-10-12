@@ -81,7 +81,59 @@ def main(argv: list[str] | None = None) -> int:
     drift.add_argument("--model", type=Path, default=Path("data/model.joblib"))
     drift.add_argument("--output", type=Path, default=Path("reports/drift.json"))
 
+    registry = cmd.add_parser("model-registry", help="Register, gate, promote, shadow and roll back trusted models")
+    registry.add_argument("action", choices=["register", "status", "promote", "rollback", "shadow"])
+    registry.add_argument("--name", help="Immutable candidate name")
+    registry.add_argument("--file", type=Path, help="Locally trained, trusted model artifact")
+    registry.add_argument("--root", type=Path, default=Path("data/registry"))
+    registry.add_argument("--active", type=Path, default=Path("data/model.joblib"))
+    registry.add_argument("--min-f1", type=float, default=0.0)
+    registry.add_argument("--max-alert-fraction", type=float, default=1.0)
+    registry.add_argument("--seed", type=int, default=42)
+
+    archive = cmd.add_parser("archive", help="Archive old unalerted flows; dry-run unless --commit")
+    archive.add_argument("--before-days", type=int, default=30)
+    archive.add_argument("--output", type=Path, required=True)
+    archive.add_argument("--max-rows", type=int, default=5000)
+    archive.add_argument("--commit", action="store_true")
+
     args = parser.parse_args(argv)
+
+    if args.command == "model-registry":
+        from networkpulse.model_registry import ModelRegistry
+        managed = ModelRegistry(args.root)
+        if args.action in {"register", "promote", "shadow"} and not args.name:
+            parser.error("model-registry action requires --name")
+        if args.action == "register":
+            if not args.file:
+                parser.error("model-registry register requires --file")
+            result = managed.register(args.name, args.file, min_f1=args.min_f1,
+                                      max_alert_fraction=args.max_alert_fraction)
+        elif args.action == "status":
+            result = managed.status()
+        elif args.action == "promote":
+            result = managed.promote(args.name, args.active)
+        elif args.action == "rollback":
+            result = managed.rollback(args.active)
+        else:
+            result = managed.shadow(args.name, args.active,
+                                    sample_flows(count=300, seed=args.seed)[-75:])
+        print(json.dumps(result, indent=2))
+        return 0
+
+    if args.command == "archive":
+        from networkpulse.retention import archive_unalerted, cutoff_days
+        settings = Settings.from_env()
+        maker = build_sessions(settings.database_url)
+        try:
+            with maker() as session:
+                result = archive_unalerted(session, before=cutoff_days(args.before_days),
+                                           destination=args.output, commit=args.commit,
+                                           max_rows=args.max_rows)
+        finally:
+            maker.kw["bind"].dispose()
+        print(json.dumps(result, indent=2))
+        return 0
 
     if args.command in {"collect", "worker"}:
         from networkpulse.streaming.redis_streams import FlowStream, connect, process_events

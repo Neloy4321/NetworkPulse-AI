@@ -3,23 +3,26 @@
 from __future__ import annotations
 
 import secrets
+import csv
+import io
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from networkpulse.config import Settings
 from networkpulse.security.oidc import Principal, TokenVerifier
+from networkpulse.security.limits import security_middleware_factory
 from networkpulse.observability import metric_middleware, exporter, INGEST_TOTAL, ALERT_ACTIONS, MODEL_INFERENCE
 import time
 from networkpulse.detector import Detector
-from networkpulse.schemas import AlertPatch, FlowBatch
+from networkpulse.schemas import AlertPatch, AlertAssignment, AnalystNote, FlowBatch
 from networkpulse.service import change_alert, ingest
-from networkpulse.storage import Alert, AlertAudit, NetworkEvent, build_sessions, counts
+from networkpulse.storage import Alert, AlertAudit, AlertNote, NetworkEvent, build_sessions, counts
 
 STATIC = Path(__file__).parent / "static"
 
@@ -42,11 +45,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(
         lifespan=lifespan,
-        title="NetworkPulse AI", version="0.2.0",
+        title="NetworkPulse AI", version="0.4.0",
         description="Flow observability, anomaly triage and auditable review. Not an IDS replacement.",
     )
 
     app.middleware("http")(metric_middleware)
+    app.middleware("http")(security_middleware_factory(
+        max_body_bytes=settings.max_body_bytes, per_minute=settings.mutation_rate_per_minute))
 
     def require_identity(authorization: Annotated[str | None, Header()] = None) -> Principal:
         if verifier is None:
@@ -114,6 +119,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ):
         from networkpulse.intelligence import host_behavior
         return host_behavior(db, limit_flows=limit_flows, max_hosts=limit_hosts)
+
+    @app.get("/api/v1/intelligence/correlations", tags=["analytics"],
+             dependencies=[Depends(read_scope)])
+    def correlation_windows(window_minutes: int = Query(10, ge=1, le=120),
+                            min_ports: int = Query(4, ge=2, le=1000),
+                            min_destinations: int = Query(4, ge=2, le=1000),
+                            db: Session = Depends(get_db)):
+        from networkpulse.intelligence import correlate_windows
+        return {"correlations": correlate_windows(db, window_minutes=window_minutes,
+                min_ports=min_ports, min_destinations=min_destinations),
+                "disclaimer": "Heuristic flow correlation, not confirmed attacks."}
 
     @app.get("/api/v1/model", tags=["model"], dependencies=[Depends(read_scope)])
     def model_info():
@@ -186,16 +202,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return [{
             "id": a.id, "severity": a.severity, "status": a.status,
             "created_at": a.created_at, "reasons": a.reasons,
+            "assigned_to": a.assigned_to,
             "src_ip": e.src_ip, "dst_ip": e.dst_ip, "dst_port": e.dst_port,
             "timestamp": e.timestamp, "risk": e.risk, "event_id": e.id,
         } for a, e in pairs]
 
     @app.patch("/api/v1/alerts/{alert_id}", dependencies=[Depends(require_api_key)], tags=["alerts"])
-    def update_alert(alert_id: int, patch: AlertPatch, db: Session = Depends(get_db)):
+    def update_alert(alert_id: int, patch: AlertPatch, db: Session = Depends(get_db),
+                     principal: Principal = Depends(require_identity)):
         obj = db.get(Alert, alert_id)
         if obj is None:
             raise HTTPException(404, detail="Alert not found")
-        change_alert(db, obj, patch.status, patch.note)
+        change_alert(db, obj, patch.status, patch.note, actor=principal.subject)
         ALERT_ACTIONS.labels(patch.status).inc()
         return {"id": obj.id, "status": obj.status, "updated_at": obj.updated_at}
 
@@ -206,7 +224,72 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         rows = db.scalars(select(AlertAudit).where(AlertAudit.alert_id == alert_id)
                          .order_by(AlertAudit.changed_at.desc())).all()
         return [{"old_status": x.old_status, "new_status": x.new_status,
-                 "note": x.note, "changed_at": x.changed_at} for x in rows]
+                 "note": x.note, "changed_at": x.changed_at, "actor": x.actor} for x in rows]
+
+    @app.get("/api/v1/alerts/{alert_id}/detail", tags=["alerts"],
+             dependencies=[Depends(read_scope)])
+    def alert_detail(alert_id: int, db: Session = Depends(get_db)):
+        alert = db.get(Alert, alert_id)
+        if alert is None:
+            raise HTTPException(404, detail="Alert not found")
+        flow = db.get(NetworkEvent, alert.event_id)
+        notes = db.scalars(select(AlertNote).where(AlertNote.alert_id == alert_id)
+                           .order_by(AlertNote.created_at.desc()).limit(100)).all()
+        return {
+            "id": alert.id, "status": alert.status, "severity": alert.severity,
+            "assigned_to": alert.assigned_to, "reasons": alert.reasons,
+            "risk": flow.risk, "anomaly_score": flow.anomaly_score,
+            "event": {column.name: getattr(flow, column.name)
+                      for column in NetworkEvent.__table__.columns},
+            "notes": [{"actor": n.actor, "note": n.note,
+                       "created_at": n.created_at} for n in notes],
+        }
+
+    @app.post("/api/v1/alerts/{alert_id}/notes", tags=["alerts"],
+              dependencies=[Depends(require_api_key)])
+    def add_alert_note(alert_id: int, payload: AnalystNote,
+                       principal: Principal = Depends(analyst_scope),
+                       db: Session = Depends(get_db)):
+        if db.get(Alert, alert_id) is None:
+            raise HTTPException(404, detail="Alert not found")
+        note = AlertNote(alert_id=alert_id, actor=principal.subject, note=payload.note)
+        db.add(note)
+        db.commit()
+        return {"id": note.id, "actor": principal.subject}
+
+    @app.patch("/api/v1/alerts/{alert_id}/assignment", tags=["alerts"],
+               dependencies=[Depends(require_api_key)])
+    def assign_alert(alert_id: int, payload: AlertAssignment,
+                     principal: Principal = Depends(analyst_scope),
+                     db: Session = Depends(get_db)):
+        alert = db.get(Alert, alert_id)
+        if alert is None:
+            raise HTTPException(404, detail="Alert not found")
+        old = alert.assigned_to
+        alert.assigned_to = payload.assigned_to
+        db.add(AlertNote(alert_id=alert_id, actor=principal.subject,
+                         note=f"Ownership: {old or 'unassigned'} -> {payload.assigned_to or 'unassigned'}; {payload.note}"))
+        db.commit()
+        return {"id": alert_id, "assigned_to": alert.assigned_to}
+
+    @app.get("/api/v1/alerts/export.csv", tags=["alerts"],
+             dependencies=[Depends(read_scope)])
+    def export_alerts(db: Session = Depends(get_db),
+                      limit: int = Query(1000, ge=1, le=5000)):
+        data = db.execute(select(Alert, NetworkEvent).join(NetworkEvent)
+                          .order_by(Alert.created_at.desc()).limit(limit)).all()
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['alert_id', 'severity', 'status', 'assigned_to', 'src_ip',
+                         'dst_ip', 'dst_port', 'risk', 'created_at'])
+        for alert, flow in data:
+            record = [alert.id, alert.severity, alert.status, alert.assigned_to or '',
+                      flow.src_ip, flow.dst_ip, flow.dst_port, flow.risk,
+                      alert.created_at.isoformat()]
+            writer.writerow(["'" + x if isinstance(x, str) and x.startswith(('=', '+', '-', '@'))
+                             else x for x in record])
+        return Response(content=output.getvalue(), media_type='text/csv',
+                        headers={'Content-Disposition': 'attachment; filename=networkpulse-alerts.csv'})
 
     @app.get("/api/v1/trends", tags=["analytics"], dependencies=[Depends(read_scope)])
     def trends(limit: int = Query(5000, ge=1, le=10000), db: Session = Depends(get_db)):

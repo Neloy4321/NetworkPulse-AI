@@ -83,11 +83,13 @@ def ingest(session: Session, model: Detector, events: list[FlowEvent]) -> dict:
     }
 
 
-def change_alert(session: Session, alert: Alert, new_status: str, note: str) -> None:
+def change_alert(session: Session, alert: Alert, new_status: str, note: str,
+                 actor: str = "local-operator") -> None:
     old = alert.status
     alert.status = new_status
     alert.updated_at = datetime.now(timezone.utc)
     session.add(AlertAudit(
-        alert_id=alert.id, old_status=old, new_status=new_status, note=note
+        alert_id=alert.id, old_status=old, new_status=new_status, note=note,
+        actor=actor[:150]
     ))
     session.commit()

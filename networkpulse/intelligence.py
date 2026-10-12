@@ -50,3 +50,45 @@ def host_behavior(session: Session, *, since: datetime | None = None,
     return {"window_start": since.isoformat(),"flow_count":len(flows),
             "host_count":len(groups),"hosts":rows[:max_hosts],
             "limitations":"Windowed metadata aggregates and heuristics; not proof of malicious activity."}
+
+
+def correlate_windows(session: Session, *, window_minutes: int = 10,
+                      min_destinations: int = 4, min_ports: int = 4,
+                      max_flows: int = 20000, max_results: int = 100) -> list[dict]:
+    """Deterministic multi-flow correlation of scanning-LIKE metadata patterns.
+
+    No threat claim, attribution, IP reputation or intrusion labels are inferred.
+    """
+    if not 1 <= window_minutes <= 120 or min_destinations < 2 or min_ports < 2:
+        raise ValueError('invalid correlation window and thresholds')
+    if not 1 <= max_flows <= 100000 or not 1 <= max_results <= 1000:
+        raise ValueError('invalid correlation bounds')
+    from collections import defaultdict
+    flows = session.scalars(select(NetworkEvent).order_by(NetworkEvent.timestamp.desc())
+                            .limit(max_flows)).all()
+    grouped = defaultdict(list)
+    span = window_minutes * 60
+    for event in flows:
+        # Align window boundaries using epoch seconds, not local timezone.
+        stamp = event.timestamp
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=timezone.utc)
+        bucket = int(stamp.timestamp()) // span
+        grouped[(event.src_ip, bucket)].append(event)
+    output = []
+    for (source, bucket), rows in grouped.items():
+        destinations = len({r.dst_ip for r in rows})
+        ports = len({r.dst_port for r in rows})
+        if destinations < min_destinations and ports < min_ports:
+            continue
+        output.append({
+            'src_ip': source, 'window_start_utc': datetime.fromtimestamp(bucket * span,
+                                                                         tz=timezone.utc).isoformat(),
+            'flow_count': len(rows), 'destination_count': destinations,
+            'port_count': ports, 'flagged_flows': sum(bool(r.anomalous) for r in rows),
+            'scanning_like': ports >= min_ports,
+            'distributed_targeting_like': destinations >= min_destinations,
+            'confidence': 'heuristic_only',
+        })
+    return sorted(output, key=lambda x: (-x['flagged_flows'], -x['flow_count'],
+                                         x['src_ip'], x['window_start_utc']))[:max_results]

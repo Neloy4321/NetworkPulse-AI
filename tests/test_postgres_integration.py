@@ -16,7 +16,7 @@ from networkpulse.storage import Alert, NetworkEvent, build_sessions
 @pytest.mark.skipif(not os.getenv("PG_TEST_DATABASE_URL"), reason="No CI PostgreSQL service")
 def test_postgres_migration_bigint_and_upsert_contention():
     url = os.environ["PG_TEST_DATABASE_URL"]
-    assert upgrade_database(url)["revision"] == "0002_counter_integrity"
+    assert upgrade_database(url)["revision"] == "0003_soc_accountability"
     maker = build_sessions(url)
     engine = maker.kw["bind"]
     try:

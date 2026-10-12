@@ -1,20 +1,22 @@
-# Evidence-led engineering status — v0.3 development
+# v0.4 Synthetic-first implementation — evidence ledger
 
-The following is the checklist status after the v0.2 database release and first set of v0.3 enhancements. A working module or test is **not** proof that its entire requirement has been completed.
+The user will provide labeled real traffic / official benchmark files later. **No missing real-world dataset is fabricated**. All quantitative detector scores in the stock dashboard come from seeded synthetic records. `100% implemented` must not be inferred from any roadmap percentages: training data and infrastructure evidence are separate gates.
 
-| Requirement | Status | Verified implementation | Important gaps |
-| :--- | :--- | :--- | :--- |
-| 1. Real-data ML evaluation | **Partial** | External UNSW CSV adapter, IF/LOF/rules and metrics, duplicate-leakage tests on synthetic fixtures | Official-file evaluation report, CIC mapping, temporal/source shift and unseen-site validation |
-| 2. Database correctness | **Strong partial** | Alembic, BIGINT PG, atomic upserts, contention tests | Retention/archival jobs, staged DB rollback, throughput |
-| 3. Security & authorization | **Partial** | Local API keys + opt-in OIDC RS256 RBAC, negative tests | Real IdP deployment, frontend login/PKCE, rate limits, TLS, secure actor audit |
-| 4. Continuous processing | **Partial** | Redis Streams worker, collector, checkpoints, retries, backpressure and DLQ; CI Redis test | Actual Zeek/Suricata sensor deployment, multi-node failover, latency benchmarks |
-| 5. Reliable ML & lifecycle | **Partial** | Synthetic temporal evaluation, PSI drift reporting, alert budget | Model registry, signed artifacts, trained candidate gates, shadow & rollback |
-| 6. Monitoring | **Partial** | JSON request metrics, Prometheus-format counters/histograms | Grafana, distributed tracing, SLOs and operational paging |
-| 7. SOC workflow | **Partial** | Investigation triage and audit, severity/IP filtering, pagination, sort | Case ownership, detailed timeline, export, OIDC browser UX |
-| 8. Tests & QA | **Partial** | Python unit/integration tests, PG/Redis service CI, JWT negative tests | Browser E2E (local browser blocked), load/penetration tests, fuzzing |
-| 9. Deployment & DevOps | **Partial** | Compose Postgres+opt-in Redis worker, nonroot image, CI | Docker build runtime proof, TLS staging, rollback drills and image scans |
-| 10. Network intelligence | **Partial** | Windowed per-source behavior and scanning-like metadata heuristics | Asset inventory, multievent correlation, threat feeds |
-| 11. Data & MLOps | **Partial** | Explicit feature contract, benchmark provenance SHA256, PSI monitoring | Candidate registry, artifact signatures, partitioned telemetry and scheduled reports |
-| 12. Documentation | **Partial** | Model card, architecture, security threat model, benchmark/runbooks, CI | Official benchmark results, measured load tests, validated production demo and video |
+| User requirement | Shipped engineering slice | Evidence / remaining external validation |
+| --- | --- | --- |
+| 1. Real dataset & ML validation | External UNSW CSV adapter (train/test separation, IF/LOF/rule baselines, PR-AUC, ROC-AUC, FPR, category recall, duplicate filtering), synthetic chronological detector tests | Official UNSW CSVs not provided; no actual external benchmark run, time/site shift validation or confirmed real-data accuracy |
+| 2. Database | Alembic 0001–0003, PostgreSQL BIGINT, atomic ingestion, duplicate contention, SQLite backup, conservative manual archival with SHA-256 | CI PostgreSQL test; production scale, archival encryption/PITR/retention automation not verified |
+| 3. Identity/security | Opt-in OIDC RS256/RBAC for API, API-key local mode, body size and in-process rate limiter, security headers, JWT negative tests | No deployed real IdP, browser PKCE, gateway TLS, central secrets or penetration test; browser API key prompt is a demo workflow |
+| 4. Streaming | Zeek/Suricata JSONL collector, checkpoint, Redis Streams, worker, retry/DLQ/claim, CI Redis test | No physical sensor field deployment, HA worker failover benchmark or measured live processing SLO |
+| 5. ML lifecycle | PSI drift, budget, local candidate registry, SHA-256 integrity, metadata gates, shadow comparison and manual promotion/rollback | Synthetic comparison only; artifact signature/trusted attestation, delayed labels, distributed model-serving gates absent |
+| 6. Operational monitoring | Prometheus counters/histograms and optional Grafana dashboards | Configuration not verified with actual Docker Compose run; no lag paging, tracing or managed alert manager |
+| 7. SOC | Filter/sort/paginate, secure role gates, alert detail, case notes, assignment, actor-attributed history, CSV export | Complete browser UI for all case endpoints, SSO UX and automated E2E not verified |
+| 8. QA | SQLite, concurrency, migration, OIDC negative, registry, retention, SOC tests; CI PostgreSQL/Redis services | Browser Playwright and stress/penetration scans not independently run |
+| 9. Deployment | Dockerfile, Compose PostgreSQL/worker; GH Actions tests and migrations | Multi-stage signed images, actual staging HTTPS, disaster recovery drill unverified |
+| 10. Network intelligence | Windowed host behavior and multi-flow correlation with conservative heuristic labels | Asset inventory and reputable feed enrichment not implemented |
+| 11. Data/MLOps | Benchmark file checksums, versioned feature contract, shadow candidate registry, drift | End-to-end immutable dataset lineage, signed artifacts, scheduled runs and large-scale partitioned storage missing |
+| 12. Documentation | Architecture, API, threat model, benchmark notes, migration, retention, model lifecycle, observability | Actual official benchmark report, reproducible measured load and short demo video pending |
 
-**Important:** The official benchmark files are not redistributed; licensing/academic-use conditions are linked in `REAL_DATA_BENCHMARK.md`. Do not quote synthetic fixture test results as real-world accuracy.
+**Scope of local test:** Python tests exercise the actual source code. Service-dependent PostgreSQL and Redis tests run on GitHub Actions when the associated workflow completes; check the run result rather than assuming passing local tests imply passing CI.
+
+To upgrade a v0.1/v0.2 SQLite DB, stop the old API, back up `data/networkpulse.db`, install v0.4 into a separate directory or Git checkout, copy your **existing data/ directory**, run `networkpulse db upgrade`, then run `networkpulse bootstrap` and restart the API. Do not overwrite the only original model or SQLite database.

@@ -41,3 +41,16 @@ The distinction between demonstrated capability and future scope matters more th
 - Contract tests against sensor log versions, security testing, containers signed and scanned.
 
 **Not promised:** A live hosted environment, universal threat detection, validated 99%+ intrusion accuracy, or production Kubernetes deployment.
+
+## Implemented in v0.3–v0.4 (synthetic-first)
+
+- UNSW prepared CSV offline evaluation **adapter** with IF/LOF/rule comparison, provenance hashing and leakage checks; requires user-supplied official CSVs for real benchmark result.
+- OIDC RS256 JWT verification, role-scoped read/mutation endpoints and tests; external identity provider and complete browser PKCE login not verified.
+- Redis Streams collector/worker, retry/dead-letter and idempotent database ingestion; CI includes Redis integration test, not real multi-site sensor streaming.
+- Prometheus HTTP/ingestion metrics, additional source behavior/correlation heuristics, opt-in Grafana/Prometheus Compose configuration.
+- Alembic revision `0003_soc_accountability`: analyst notes, assignments, actor-attributed triage history, detail and CSV export endpoints.
+- Request-body and per-process mutation rate limits, defensive response headers.
+- Trusted local model artifact registry with checksums, synthetic gates, shadow comparison, explicit promotion and rollback.
+- Manual conservative unalerted-only JSONL archival with SHA256 manifest (not automated regulated retention).
+
+**Still requiring external evidence:** official benchmark evaluation, live OIDC PKCE with IdP, TLS reverse proxy and staging deployment, real Zeek/Suricata continuous log test, production durability/failover/load benchmarking, signed artifacts and native browser E2E deployment. Until then these checklist requirements are **not 100% verified**.

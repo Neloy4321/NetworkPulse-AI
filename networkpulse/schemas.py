@@ -60,6 +60,15 @@ class AlertPatch(BaseModel):
     note: str = Field(min_length=3, max_length=1500)
 
 
+class AlertAssignment(BaseModel):
+    assigned_to: str | None = Field(default=None, min_length=1, max_length=150)
+    note: str = Field(min_length=3, max_length=1500)
+
+
+class AnalystNote(BaseModel):
+    note: str = Field(min_length=3, max_length=1500)
+
+
 class ModelMetadata(BaseModel):
     schema_version: int
     trained_at: datetime
