@@ -1,7 +1,6 @@
 import pytest
 
 from networkpulse.config import Settings
-from networkpulse.detector import train
 from networkpulse.service import severity
 
 
