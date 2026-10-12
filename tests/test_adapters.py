@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from networkpulse.adapters import SkipRecord, from_suricata, from_zeek, iter_jsonl
+from networkpulse.adapters import from_suricata, from_zeek, iter_jsonl
 
 
 def test_zeek_conn_adapter():
