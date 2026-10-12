@@ -75,8 +75,9 @@ class FlowStream:
         return info[0].get("times_delivered", 1) if info else 1
 
     def consume_once(self, consumer: str, handler: Callable[[dict], None],
-                     *, recover: bool = True, block_ms: int = 1000) -> dict:
-        entries = self._recover(consumer) if recover else []
+                     *, recover: bool = True, block_ms: int = 1000,
+                     recover_idle_ms: int = 30000) -> dict:
+        entries = self._recover(consumer, idle_ms=recover_idle_ms) if recover else []
         if not entries:
             entries = self._messages(consumer, block_ms=block_ms)
         out = {"processed": 0, "retried": 0, "dead_lettered": 0}

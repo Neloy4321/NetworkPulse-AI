@@ -30,7 +30,8 @@ def test_redis_group_ack_retry_and_deadletter():
         r=q.consume_once("worker-ci",lambda p: (_ for _ in ()).throw(ValueError("replay")),recover=False,block_ms=10)
         assert r["retried"]==1
         # Redis XAUTOCLAIM increments delivery counter, leading to DLQ after retries.
-        r=q.consume_once("worker-ci",lambda p: (_ for _ in ()).throw(ValueError("repeat")),recover=True,block_ms=10)
+        r=q.consume_once("worker-ci",lambda p: (_ for _ in ()).throw(ValueError("repeat")),
+                         recover=True, recover_idle_ms=0, block_ms=10)
         assert r["dead_lettered"]==1
         assert client.xlen(stream)==0
     finally:
