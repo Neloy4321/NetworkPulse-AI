@@ -14,13 +14,30 @@ class Settings:
     api_key: str
     max_batch: int = 250
     risk_threshold: float = 0.0
+    auth_mode: str = "local"
+    oidc_issuer: str = ""
+    oidc_audience: str = ""
+    oidc_jwks_url: str = ""
+    oidc_role_claim: str = "networkpulse_role"
 
     @classmethod
     def from_env(cls) -> Settings:
         key = os.getenv("NETWORKPULSE_API_KEY", "")
-        if len(key) < 16:
+        mode = os.getenv("NETWORKPULSE_AUTH_MODE", "local").lower()
+        if mode == "local" and len(key) < 16:
             raise ValueError("NETWORKPULSE_API_KEY must contain at least 16 characters")
+        if mode not in {"local", "oidc"}:
+            raise ValueError("NETWORKPULSE_AUTH_MODE must be local or oidc")
+        if mode == "oidc" and not all(os.getenv(x) for x in (
+            "NETWORKPULSE_OIDC_ISSUER", "NETWORKPULSE_OIDC_AUDIENCE", "NETWORKPULSE_OIDC_JWKS_URL"
+        )):
+            raise ValueError("OIDC requires issuer, audience, and JWKS URL")
         return cls(
+            auth_mode=mode,
+            oidc_issuer=os.getenv("NETWORKPULSE_OIDC_ISSUER", ""),
+            oidc_audience=os.getenv("NETWORKPULSE_OIDC_AUDIENCE", ""),
+            oidc_jwks_url=os.getenv("NETWORKPULSE_OIDC_JWKS_URL", ""),
+            oidc_role_claim=os.getenv("NETWORKPULSE_OIDC_ROLE_CLAIM", "networkpulse_role"),
             database_url=os.getenv("DATABASE_URL", "sqlite:///./data/networkpulse.db"),
             model_path=Path(os.getenv("MODEL_PATH", "data/model.joblib")),
             api_key=key,

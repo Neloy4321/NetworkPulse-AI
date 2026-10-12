@@ -58,15 +58,21 @@
           <div class="protocol-list" id="protocol-legend"><span class="muted">Loading protocols…</span></div>
         </article>
       </section>
-      <section class="panel table-panel" id="investigations"><div class="panel-header"><div><span class="overline">03 // ALERT OPERATIONS</span><h2>Investigation queue</h2><p class="section-sub">Alert state changes are recorded in an audit log.</p></div><label class="filter-label" for="status-filter">Status <select id="status-filter"><option value="">All statuses</option><option value="open">Open</option><option value="investigating">Investigating</option><option value="resolved">Resolved</option><option value="false_positive">False positive</option></select></label></div>
+      <section class="panel table-panel" id="investigations"><div class="panel-header"><div><span class="overline">03 // ALERT OPERATIONS</span><h2>Investigation queue</h2><p class="section-sub">Alert state changes are recorded in an audit log.</p></div><div class="filter-controls">
+<label class="filter-label" for="status-filter">Status <select id="status-filter"><option value="">All statuses</option><option value="open">Open</option><option value="investigating">Investigating</option><option value="resolved">Resolved</option><option value="false_positive">False positive</option></select></label>
+<label class="filter-label" for="severity-filter">Severity <select id="severity-filter"><option value="">All</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label>
+<label class="filter-label" for="alert-ip-filter">Source IP <input id="alert-ip-filter" placeholder="e.g. 10.11.0.5" maxlength="45"/></label>
+<label class="filter-label" for="order-filter">Sort <select id="order-filter"><option value="newest">Newest</option><option value="highest_risk">Risk</option><option value="oldest">Oldest</option></select></label>
+</div></div>
         <div class="table-scroll"><table><thead><tr><th>SEVERITY</th><th>SOURCE → DESTINATION</th><th>RISK</th><th>STATUS</th><th>REASON</th><th>ACTION</th></tr></thead><tbody id="alerts-body"><tr><td colspan="6">Loading alert queue…</td></tr></tbody></table></div>
+        <div class="pagination"><button type="button" id="alerts-prev" disabled>← Previous</button><span id="alerts-page">Page 1</span><button type="button" id="alerts-next">Next →</button></div>
         <p class="table-note">A flagged flow is an investigation candidate, not proof of malicious activity. Use triage outcomes to distinguish false positives.</p>
       </section>
       <section class="panel model-panel" id="model"><div class="panel-header"><div><span class="overline">04 // DETECTOR INTEGRITY</span><h2>Model & evaluation provenance</h2></div><span class="small-badge gold">TIME-ORDERED SPLITS</span></div>
         <div class="model-data"><div class="model-detail"><span>TRAINING SOURCE</span><strong id="model-data-source">—</strong></div><div class="model-detail"><span>TRAIN / CALIBRATION / HOLDOUT</span><strong id="model-splits">—</strong></div><div class="model-detail"><span>THRESHOLD QUANTILE</span><strong id="model-quantile">—</strong></div><div class="model-detail"><span>HOLDOUT F1</span><strong id="model-f1">—</strong></div></div>
         <p class="model-warning">Synthetic demo evaluation is not real-world network intrusion detection performance. Baseline shifts, label availability, false positives and external validation need attention before operational use.</p>
       </section>
-      <footer><span>NETWORKPULSE AI <i>•</i> Engineering preview v0.1.0</span><span>Designed for reproducible analysis, not automated blocking.</span></footer>
+      <footer><span>NETWORKPULSE AI <i>•</i> Engineering prototype v0.3.0</span><span>Designed for reproducible analysis, not automated blocking.</span></footer>
       <div id="toast" class="toast" role="status" aria-live="polite"></div>
     </main>
   </div>

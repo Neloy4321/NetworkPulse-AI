@@ -13,6 +13,7 @@ from sklearn.feature_extraction import DictVectorizer
 from sklearn.metrics import average_precision_score, precision_recall_fscore_support, roc_auc_score
 
 from networkpulse.features import FEATURE_VERSION, event_features, explain
+from networkpulse.drift import make_reference
 from networkpulse.schemas import FlowEvent
 
 
@@ -106,6 +107,7 @@ def train(
             "train_count": len(train_set), "cal_count": len(cal_set),
             "holdout_count": len(holdout), "holdout_first": holdout[0].timestamp.isoformat(),
             "feature_count": features.shape[1],
+            "drift_baseline": make_reference(features),
         },
     )
     if all(e.label is not None for e in holdout):

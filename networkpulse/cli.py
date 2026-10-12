@@ -58,7 +58,63 @@ def main(argv: list[str] | None = None) -> int:
     replay.add_argument("--batch-size", type=int, default=20)
     replay.add_argument("--delay", type=float, default=0.25, help="seconds between batches")
 
+    benchmark = cmd.add_parser("benchmark-unsw", help="Offline UNSW-NB15 official train/test comparison")
+    benchmark.add_argument("--train", type=Path, required=True)
+    benchmark.add_argument("--test", type=Path, required=True)
+    benchmark.add_argument("--output", type=Path, default=Path("reports/unsw-benchmark.json"))
+    benchmark.add_argument("--max-train", type=int, default=15000)
+    benchmark.add_argument("--max-test", type=int, default=12000)
+    benchmark.add_argument("--seed", type=int, default=42)
+
+    collect = cmd.add_parser("collect", help="Tail a Zeek/Suricata JSONL file to Redis Streams")
+    collect.add_argument("--path", type=Path, required=True)
+    collect.add_argument("--format", choices=["zeek", "suricata", "canonical"], required=True)
+    collect.add_argument("--checkpoint", type=Path, default=Path("data/collector-offset.json"))
+    collect.add_argument("--once", action="store_true")
+
+    worker = cmd.add_parser("worker", help="Consume Redis Streams and commit scored flows")
+    worker.add_argument("--consumer", default="networkpulse-worker-1")
+    worker.add_argument("--once", action="store_true")
+
+    drift = cmd.add_parser("drift-report", help="Audit drift against a trusted model baseline")
+    drift.add_argument("--data", type=Path, required=True)
+    drift.add_argument("--model", type=Path, default=Path("data/model.joblib"))
+    drift.add_argument("--output", type=Path, default=Path("reports/drift.json"))
+
     args = parser.parse_args(argv)
+
+    if args.command in {"collect", "worker"}:
+        from networkpulse.streaming.redis_streams import FlowStream, connect, process_events
+        from networkpulse.streaming.collector import LogCollector
+        queue = FlowStream(connect(os.getenv("REDIS_URL", "redis://localhost:6379/0")))
+        queue.initialize()
+        if args.command == "worker":
+            result = process_events(queue, args.consumer, settings=Settings.from_env(), once=args.once)
+        else:
+            collector = LogCollector(args.path, args.format, args.checkpoint, queue.enqueue)
+            result = collector.poll_once() if args.once else collector.follow()
+        if result is not None:
+            print(json.dumps(result, indent=2))
+        return 0
+
+    if args.command == "benchmark-unsw":
+        from networkpulse.evaluation.unsw import evaluate_unsw, write_report
+        output = evaluate_unsw(args.train, args.test, max_train=args.max_train,
+                               max_test=args.max_test, seed=args.seed)
+        write_report(output, args.output)
+        print(json.dumps({"report": str(args.output), "results": output["evaluation"],
+                          "temporal_split_verified": False}, indent=2))
+        return 0
+
+    if args.command == "drift-report":
+        from networkpulse.drift import drift_report
+        events = list(iter_jsonl(args.data, "canonical"))
+        report = drift_report(Detector.load(args.model), events)
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        print(json.dumps({"report": str(args.output), "events": len(events),
+                          "worst_psi": report["worst_psi"]}, indent=2))
+        return 0
 
     if args.command == "generate-demo":
         events = sample_flows(count=args.count, seed=args.seed)

@@ -12,6 +12,7 @@
 ![ML](https://img.shields.io/badge/ML-Isolation_Forest-6b6dc6)
 ![Tests](https://img.shields.io/badge/automated_tests-see_CI-246a60)
 ![Data](https://img.shields.io/badge/data-flow_metadata_only-c49a5b)
+![Engineering](https://img.shields.io/badge/engineering_status-verified_modules_not_prod-b68042)
 
 [Quick start](#quick-start) · [Architecture](#system-architecture) · [Evaluation](#model-evaluation) · [API](#api--cli) · [Runbooks](docs/OPERATIONS.md) · [Model card](docs/MODEL_CARD.md)
 
@@ -43,6 +44,18 @@ Network logs are produced in different shapes by different sensors. An investiga
 | **Web application** | Responsive same-origin dashboard, charts, alert filters, operator triage | HTML/CSS/JS + FastAPI |
 | **Replaying telemetry** | Rate-limited CLI JSONL HTTP replay, with API-key authorization | CLI and API tests |
 | **Delivery** | Dockerfile, PostgreSQL Compose, typed CLI, GitHub Actions test workflow | Build/run configuration; see [limitations](docs/OPERATIONS.md) |
+
+## Engineering upgrade status (v0.3 development)
+
+The original dashboard and v0.2 database correctness features are preserved. The v0.3 work adds:
+
+- **Official UNSW-NB15 CSV compatibility runner**, with Isolation Forest vs. LOF novelty vs. rule-based baseline, confusion matrices, PR-AUC/ROC-AUC/FPR, file provenance and cross-partition duplicate checks. **An official-dataset run and an independent chronological/site holdout are still pending**. See [benchmark methodology](docs/REAL_DATA_BENCHMARK.md).
+- **Optional OIDC resource-server mode**: RS256 access tokens, HTTPS JWKS/issuer, audience and role checks, with Viewer/Analyst/Admin API permissions. Browser sign-in/PKCE is **not yet integrated**. Local demo mode is unchanged. [Threat model](docs/SECURITY_THREAT_MODEL.md).
+- **Redis Streams collection and worker** with at-least-once replay, file checkpoints, pending-claim recovery, dead-letter behavior and bounded backlog. Opt-in [streaming runbook](docs/STREAMING_RUNBOOK.md).
+- **Prometheus-format metrics and JSON request logging**, [operations limitations](docs/OBSERVABILITY.md).
+- **Model drift and alert-budget reports**, windowed source-IP behavior aggregates, and alert filtering/sorting/pagination.
+
+**Not complete:** The user's full twelve-part production-readiness checklist is tracked explicitly in [Release Status](docs/RELEASE_STATUS.md) and [GitHub issue #2](https://github.com/Neloy4321/NetworkPulse-AI/issues/2). These features must not be misrepresented as a production IDS.
 
 ## Dashboard
 
@@ -141,6 +154,22 @@ networkpulse ingest-file --format suricata --path examples/suricata-eve.jsonl
 
 Both example files are included in this repo; the Suricata adapter skips non-flow EVE records. Your own Zeek/Suricata **JSON-format** log files can be supplied with the same commands after checking [schema compatibility](docs/DATA_CONTRACT.md).
 
+### Advanced CLI (opt-in)
+
+```bash
+# Download UNSW-NB15 train/test partition CSVs yourself from the official academic source.
+networkpulse benchmark-unsw --train data/external/UNSW_NB15_training-set.csv --test data/external/UNSW_NB15_testing-set.csv --output reports/unsw.json
+
+# Drift report uses a model fitted by this version (old v0.1 artifacts lack drift baseline).
+networkpulse drift-report --data examples/generated-demo.jsonl --model data/model.joblib --output reports/drift.json
+
+# Requires Redis 7 running, a separate worker and authorized Zeek/Suricata logs.
+networkpulse worker --consumer workstation-1
+networkpulse collect --format zeek --path /path/to/conn.log --checkpoint data/collector-offset.json
+```
+
+Redis Python dependency: `pip install -e '.[streaming]'`. For additional safeguards and operating limits, see the [streaming runbook](docs/STREAMING_RUNBOOK.md).
+
 ## Reproducible ML workflow
 
 Generate, fit, evaluate and save a model from a known seed:
@@ -176,7 +205,7 @@ These numbers are **solely from easy-to-separate seeded synthetic examples** and
 | :--- | :--- | :--- | :--- |
 | `/health/live` | GET | Process health | No |
 | `/health/ready` | GET | DB + detector readiness | No |
-| `/api/v1/model` | GET | Model provenance and evaluation metadata | No |
+| `/api/v1/model` | GET | Model provenance and evaluation metadata | Local: No / OIDC: Viewer+ |
 | `/api/v1/summary` | GET | Ingestion/alert/protocol counters | No |
 | `/api/v1/trends` | GET | 5-minute UTC windows | No |
 | `/api/v1/events` | GET | Filterable recent flows | No |
@@ -184,6 +213,8 @@ These numbers are **solely from easy-to-separate seeded synthetic examples** and
 | `/api/v1/alerts/{id}/history` | GET | Alert audit history | No |
 | `/api/v1/ingest` | POST | Up to 250 validated flow objects | **X-API-Key** |
 | `/api/v1/alerts/{id}` | PATCH | New state and required audit note | **X-API-Key** |
+
+**RBAC:** In OIDC mode, read APIs require Viewer+, ingestion/triage require Analyst+, and Prometheus `/metrics` requires Admin. The default localhost demo still uses an API key for writes and leaves reads unprotected; never expose it directly on the internet.
 
 **Authenticated traffic replay:**
 

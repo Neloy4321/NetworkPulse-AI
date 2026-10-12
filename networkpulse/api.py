@@ -5,7 +5,8 @@ from __future__ import annotations
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated
+from datetime import datetime
+from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -13,6 +14,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from networkpulse.config import Settings
+from networkpulse.security.oidc import Principal, TokenVerifier
+from networkpulse.observability import metric_middleware, exporter, INGEST_TOTAL, ALERT_ACTIONS, MODEL_INFERENCE
+import time
 from networkpulse.detector import Detector
 from networkpulse.schemas import AlertPatch, FlowBatch
 from networkpulse.service import change_alert, ingest
@@ -26,6 +30,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     make_session = build_sessions(settings.database_url)
     # Persist models trained offline; do not auto-train on incoming production data.
     model = Detector.load(settings.model_path) if settings.model_path.is_file() else None
+    verifier = (TokenVerifier(settings.oidc_issuer, settings.oidc_audience,
+                              settings.oidc_jwks_url, settings.oidc_role_claim)
+                if settings.auth_mode == "oidc" else None)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -40,12 +47,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         description="Flow observability, anomaly triage and auditable review. Not an IDS replacement.",
     )
 
+    app.middleware("http")(metric_middleware)
+
+    def require_identity(authorization: Annotated[str | None, Header()] = None) -> Principal:
+        if verifier is None:
+            return Principal(subject="local-operator", role="admin")
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(401, detail="OIDC bearer access token required")
+        return verifier.verify(authorization[len("Bearer "):])
+
+    def read_scope(principal: Principal = Depends(require_identity)) -> Principal:
+        principal.require("viewer")
+        return principal
+
+    def analyst_scope(principal: Principal = Depends(require_identity)) -> Principal:
+        principal.require("analyst")
+        return principal
+
     def get_db():
         with make_session() as session:
             yield session
 
-    def require_api_key(x_api_key: Annotated[str | None, Header()] = None):
-        if not x_api_key or not secrets.compare_digest(x_api_key, settings.api_key):
+    def require_api_key(x_api_key: Annotated[str | None, Header()] = None,
+                        principal: Principal = Depends(require_identity)):
+        if verifier is not None:
+            principal.require("analyst")
+        elif not x_api_key or not secrets.compare_digest(x_api_key, settings.api_key):
             raise HTTPException(status_code=401, detail="Valid X-API-Key required")
 
     def require_model() -> Detector:
@@ -53,7 +80,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=503, detail="Model not trained; run networkpulse bootstrap")
         return model
 
-    @app.get("/", include_in_schema=False)
+    @app.get("/", include_in_schema=False, dependencies=[Depends(read_scope)])
     def dashboard():
         return FileResponse(STATIC / "index.html")
 
@@ -62,6 +89,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if filename not in {"app.js", "styles.css"}:
             raise HTTPException(404, detail="Not found")
         return FileResponse(STATIC / filename)
+
+    @app.get("/metrics", include_in_schema=False)
+    def metrics(principal: Principal = Depends(read_scope)):
+        principal.require("admin")
+        return exporter()
 
     @app.get("/health/live", tags=["operations"])
     def liveness():
@@ -75,7 +107,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             counts(session)
         return {"status": "ready", "model_source": model.metadata.get("source")}
 
-    @app.get("/api/v1/model", tags=["model"])
+    @app.get("/api/v1/intelligence/hosts", tags=["analytics"], dependencies=[Depends(read_scope)])
+    def intelligence_hosts(
+        limit_flows: int = Query(20000, ge=1, le=100000),
+        limit_hosts: int = Query(50, ge=1, le=200),
+        db: Session = Depends(get_db),
+    ):
+        from networkpulse.intelligence import host_behavior
+        return host_behavior(db, limit_flows=limit_flows, max_hosts=limit_hosts)
+
+    @app.get("/api/v1/model", tags=["model"], dependencies=[Depends(read_scope)])
     def model_info():
         detector = require_model()
         # Training metadata is descriptive, not an independent certification.
@@ -85,13 +126,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def ingest_batch(batch: FlowBatch, db: Session = Depends(get_db)):
         if len(batch.events) > settings.max_batch:
             raise HTTPException(413, detail="Batch exceeds MAX_BATCH")
-        return ingest(db, require_model(), batch.events)
+        started = time.perf_counter()
+        result = ingest(db, require_model(), batch.events)
+        MODEL_INFERENCE.observe(time.perf_counter() - started)
+        for key in ("inserted", "duplicates"):
+            INGEST_TOTAL.labels(key).inc(result[key])
+        return result
 
-    @app.get("/api/v1/summary", tags=["analytics"])
+    @app.get("/api/v1/summary", tags=["analytics"], dependencies=[Depends(read_scope)])
     def summary(db: Session = Depends(get_db)):
         return counts(db)
 
-    @app.get("/api/v1/events", tags=["flows"])
+    @app.get("/api/v1/events", tags=["flows"], dependencies=[Depends(read_scope)])
     def list_events(
         limit: int = Query(25, ge=1, le=100),
         offset: int = Query(0, ge=0),
@@ -112,16 +158,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "risk": e.risk, "anomalous": e.anomalous,
         } for e in events]
 
-    @app.get("/api/v1/alerts", tags=["alerts"])
+    @app.get("/api/v1/alerts", tags=["alerts"], dependencies=[Depends(read_scope)])
     def list_alerts(
         limit: int = Query(30, ge=1, le=100),
         status: str | None = Query(default=None, pattern="^(open|investigating|resolved|false_positive)$"),
+        severity: Literal["low", "medium", "high", "critical"] | None = None,
+        src_ip: str | None = Query(default=None, max_length=45),
+        protocol: Literal["tcp", "udp", "icmp", "other"] | None = None,
+        min_risk: int = Query(0, ge=0, le=100),
+        offset: int = Query(0, ge=0),
+        order: Literal["newest", "oldest", "highest_risk"] = "newest",
         db: Session = Depends(get_db),
     ):
         stmt = select(Alert, NetworkEvent).join(NetworkEvent, Alert.event_id == NetworkEvent.id)
         if status:
             stmt = stmt.where(Alert.status == status)
-        pairs = db.execute(stmt.order_by(Alert.created_at.desc()).limit(limit)).all()
+        if severity:
+            stmt = stmt.where(Alert.severity == severity)
+        if src_ip:
+            stmt = stmt.where(NetworkEvent.src_ip == src_ip)
+        if protocol:
+            stmt = stmt.where(NetworkEvent.proto == protocol)
+        stmt = stmt.where(NetworkEvent.risk >= min_risk)
+        sort = (NetworkEvent.risk.desc() if order == "highest_risk"
+                else NetworkEvent.timestamp.asc() if order == "oldest"
+                else NetworkEvent.timestamp.desc())
+        pairs = db.execute(stmt.order_by(sort, Alert.id.desc()).offset(offset).limit(limit)).all()
         return [{
             "id": a.id, "severity": a.severity, "status": a.status,
             "created_at": a.created_at, "reasons": a.reasons,
@@ -135,9 +197,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if obj is None:
             raise HTTPException(404, detail="Alert not found")
         change_alert(db, obj, patch.status, patch.note)
+        ALERT_ACTIONS.labels(patch.status).inc()
         return {"id": obj.id, "status": obj.status, "updated_at": obj.updated_at}
 
-    @app.get("/api/v1/alerts/{alert_id}/history", tags=["alerts"])
+    @app.get("/api/v1/alerts/{alert_id}/history", tags=["alerts"], dependencies=[Depends(read_scope)])
     def alert_history(alert_id: int, db: Session = Depends(get_db)):
         if db.get(Alert, alert_id) is None:
             raise HTTPException(404, detail="Alert not found")
@@ -146,7 +209,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return [{"old_status": x.old_status, "new_status": x.new_status,
                  "note": x.note, "changed_at": x.changed_at} for x in rows]
 
-    @app.get("/api/v1/trends", tags=["analytics"])
+    @app.get("/api/v1/trends", tags=["analytics"], dependencies=[Depends(read_scope)])
     def trends(limit: int = Query(5000, ge=1, le=10000), db: Session = Depends(get_db)):
         """Five-minute UTC buckets derived from stored event timestamps."""
         rows = db.scalars(select(NetworkEvent).order_by(NetworkEvent.timestamp.desc()).limit(limit)).all()

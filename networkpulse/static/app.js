@@ -9,6 +9,8 @@ const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<':
 const fmt = (v) => Number(v ?? 0).toLocaleString('en-US');
 let latestTrends = [];
 let toastTimer;
+let alertsOffset=0;
+const alertsLimit=25;
 
 async function getJson(url, init = {}) {
   const r = await fetch(url, {cache: 'no-store', ...init});
@@ -100,7 +102,9 @@ async function refresh() {
   try {
     const [summary, alerts, trends, model] = await Promise.all([
       getJson('/api/v1/summary'),
-      getJson('/api/v1/alerts?limit=25' + ($('status-filter').value ? '&status=' + encodeURIComponent($('status-filter').value) : '')),
+      getJson('/api/v1/alerts?' + new URLSearchParams({limit:String(alertsLimit), offset:String(alertsOffset),
+        status:$('status-filter').value, severity:$('severity-filter').value,
+        src_ip:$('alert-ip-filter').value.trim(), order:$('order-filter').value}).toString()),
       getJson('/api/v1/trends'), getJson('/api/v1/model'),
     ]);
     $('metric-flows').textContent = fmt(summary.flows);
@@ -117,13 +121,30 @@ async function refresh() {
     $('model-f1').textContent = model.metrics?.f1 == null ? 'N/A' : model.metrics.f1.toFixed(3);
     protocolChart(summary.protocols, summary.flows);
     latestTrends = trends; drawTimeline(trends); renderAlerts(alerts);
+    $('alerts-page').textContent = `Page ${Math.floor(alertsOffset / alertsLimit)+1}`;
+    $('alerts-prev').disabled = alertsOffset === 0;
+    $('alerts-next').disabled = alerts.length < alertsLimit;
   } catch(err) {
     $('pipeline-status').textContent = 'Service check failed';
     $('system-state').textContent = 'UNAVAILABLE';
     toast(`API unavailable: ${err.message}`);
   }
 }
-$('status-filter').addEventListener('change', refresh);
+const resetAndRefresh = () => { alertsOffset = 0; refresh(); };
+$('status-filter').addEventListener('change', resetAndRefresh);
+$('severity-filter').addEventListener('change', resetAndRefresh);
+$('order-filter').addEventListener('change', resetAndRefresh);
+let ipFilterTimer;
+$('alert-ip-filter').addEventListener('input', () => {
+  clearTimeout(ipFilterTimer);
+  ipFilterTimer = setTimeout(resetAndRefresh, 400);
+});
+$('alerts-prev').addEventListener('click', () => {
+  alertsOffset = Math.max(0, alertsOffset - alertsLimit); refresh();
+});
+$('alerts-next').addEventListener('click', () => {
+  alertsOffset += alertsLimit; refresh();
+});
 window.addEventListener('resize', () => drawTimeline(latestTrends));
 setInterval(() => $('current-time').textContent = new Date().toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'UTC'}) + ' UTC', 1000);
 setInterval(refresh, 8000);

@@ -5,7 +5,7 @@ COPY pyproject.toml README.md ./
 COPY networkpulse/ ./networkpulse/
 COPY alembic.ini ./
 COPY alembic/ ./alembic/
-RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir ".[postgres]" && \
+RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir ".[postgres,streaming]" && \
     useradd --create-home --uid 10001 networkpulse && mkdir -p /app/data && chown networkpulse:networkpulse /app/data
 USER networkpulse
 EXPOSE 8000
