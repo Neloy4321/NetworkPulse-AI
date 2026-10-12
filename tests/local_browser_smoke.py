@@ -18,10 +18,13 @@ try:
         if server.poll() is not None:
             raise RuntimeError(server.stderr.read().decode()[-2000:])
         try:
-            if httpx.get('http://127.0.0.1:8957/health/ready',timeout=1).status_code==200:break
-        except httpx.RequestError:pass
+            if httpx.get('http://127.0.0.1:8957/health/ready', timeout=1).status_code == 200:
+                break
+        except httpx.RequestError:
+            pass
         time.sleep(.2)
-    else:raise RuntimeError('Server failed to start')
+    else:
+        raise RuntimeError('Server failed to start')
     with sync_playwright() as p:
         browser=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox','--disable-dev-shm-usage'])
         page=browser.new_page(viewport={'width':1512,'height':900},device_scale_factor=1)
@@ -41,5 +44,7 @@ try:
     print('Browser smoke succeeded. Screenshot saved. Dashboard flows=325, alerts=66, filters operational.')
 finally:
     server.terminate()
-    try: server.wait(timeout=5)
-    except subprocess.TimeoutExpired:server.kill()
+    try:
+        server.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        server.kill()
