@@ -28,6 +28,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="networkpulse", description="NetworkPulse operations")
     cmd = parser.add_subparsers(dest="command", required=True)
 
+    db = cmd.add_parser("db", help="Manage schema migrations")
+    db.add_argument("action", choices=["upgrade", "status", "backup"])
+    db.add_argument("--output", type=Path, help="Backup destination (SQLite only)")
+
     boot = cmd.add_parser("bootstrap", help="Train on a seeded synthetic demo, seed demo events")
     boot.add_argument("--seed", type=int, default=42)
     boot.add_argument("--count", type=int, default=1300)
@@ -95,6 +99,20 @@ def main(argv: list[str] | None = None) -> int:
                 if args.delay:
                     time.sleep(args.delay)
         print(json.dumps(total, indent=2))
+        return 0
+
+    if args.command == "db":
+        from networkpulse.migrations import backup_sqlite, database_version, upgrade_database
+        url = os.getenv("DATABASE_URL", "sqlite:///./data/networkpulse.db")
+        if args.action == "upgrade":
+            result = upgrade_database(url)
+        elif args.action == "backup":
+            if args.output is None:
+                parser.error("db backup requires --output")
+            result = backup_sqlite(url, args.output)
+        else:
+            result = database_version(url)
+        print(json.dumps(result, indent=2))
         return 0
 
     settings = Settings.from_env()

@@ -30,10 +30,10 @@ No packet payloads, credentials, PCAP decoding, capture daemon, or packet inject
 1. Each connector transforms an external JSON object into a strict `FlowEvent` schema.
 2. Timestamp is normalized to UTC; IPs and unsigned counters are validated.
 3. `key()` hashes the canonical serialized event, excluding only evaluation labels.
-4. Service checks existing keys and inserts each unseen event once; alert rows have a unique event FK.
-5. Replaying the same file does not create duplicate flows or duplicate alerts.
+4. The service scores canonical flows, then lets the database arbitrate duplicates using SQLite/PostgreSQL `INSERT ... ON CONFLICT DO NOTHING ... RETURNING`.
+5. Bounded-batch flow inserts and matching anomaly alerts commit **in one transaction**, or roll back together. A second ingestion attempt cannot insert the same event ID or alert twice under tested conditions.
 
-**Current limitation:** The `SELECT`-then-`INSERT` idempotency path protects serial/sequential replay and tested duplicates. Concurrent writers can still race on the same key and encounter a unique-constraint exception; production scaling should use PostgreSQL `ON CONFLICT DO NOTHING` / idempotent upserts.
+**Current limitation:** The SQLite thread-level concurrency regression test confirms duplicate insertion protection; PostgreSQL multi-worker throughput and contention behavior still need dedicated integration/load tests. The system is not an external exactly-once delivery queue.
 
 ## Model lifecycle
 
@@ -97,4 +97,5 @@ erDiagram
 
 - **Fastest run:** Python + SQLite + local file artifact.
 - **Compose:** Python API service + PostgreSQL 16 + model/data volume.
-- **Cloud readiness:** This repo is a demonstrable baseline; backups, schema migrations, SSO, hosted telemetry integration, rate limiting at a gateway, and deployment verification remain to be implemented.
+- **Database schema:** Alembic revisions and conflict-safe writes are implemented, with a tested SQLite backup/legacy migration path. PostgreSQL integration and restore drills remain pending.
+- **Cloud readiness:** This repo is still a demonstrable baseline; SSO, hosted telemetry integration, rate limiting, retention automation and real deployment verification remain to be implemented.

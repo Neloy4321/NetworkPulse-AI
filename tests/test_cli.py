@@ -1,6 +1,7 @@
 import json
 
 from networkpulse.cli import main
+from networkpulse.migrations import upgrade_database
 
 
 def test_generate_demo_and_train(tmp_path, capsys):
@@ -19,6 +20,7 @@ def test_bootstrap_idempotency(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("NETWORKPULSE_API_KEY", "test-strong-key-for-bootstrap")
     monkeypatch.setenv("DATABASE_URL", "sqlite:///" + str(tmp_path / "np.db"))
     monkeypatch.setenv("MODEL_PATH", str(tmp_path / "np.joblib"))
+    upgrade_database("sqlite:///" + str(tmp_path / "np.db"))
     assert main(["bootstrap", "--count", "160", "--seed", "7"]) == 0
     a = capsys.readouterr().out
     assert '"inserted": 40' in a
@@ -33,6 +35,7 @@ def test_ingest_examples(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("NETWORKPULSE_API_KEY", "example-demo-key-strong-123")
     monkeypatch.setenv("DATABASE_URL", "sqlite:///" + str(tmp_path / "np.db"))
     monkeypatch.setenv("MODEL_PATH", str(tmp_path / "np.joblib"))
+    upgrade_database("sqlite:///" + str(tmp_path / "np.db"))
     main(["bootstrap", "--count", "160"])
     capsys.readouterr()
     fixtures = Path(__file__).resolve().parent.parent / "examples"

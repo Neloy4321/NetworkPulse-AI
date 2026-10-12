@@ -10,7 +10,7 @@
 ![Python](https://img.shields.io/badge/Python-3.11%2B-3677a3?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/API-FastAPI-087f70?logo=fastapi&logoColor=white)
 ![ML](https://img.shields.io/badge/ML-Isolation_Forest-6b6dc6)
-![Tests](https://img.shields.io/badge/automated_tests-23_passing-246a60)
+![Tests](https://img.shields.io/badge/automated_tests-see_CI-246a60)
 ![Data](https://img.shields.io/badge/data-flow_metadata_only-c49a5b)
 
 [Quick start](#quick-start) · [Architecture](#system-architecture) · [Evaluation](#model-evaluation) · [API](#api--cli) · [Runbooks](docs/OPERATIONS.md) · [Model card](docs/MODEL_CARD.md)
@@ -38,7 +38,7 @@ Network logs are produced in different shapes by different sensors. An investiga
 | **Input validation** | Typed fields, IP checks, UTC timestamps, counter bounds, batch size limits | Pydantic and API tests |
 | **Feature pipeline** | Log-scaled flow duration, bytes, packets, rates, ratios, protocol and connection state | Versioned feature contract |
 | **ML & evaluation** | Isolation Forest, benign-only training, **temporal 60/15/25 split**, calibration threshold, held-out evaluation | Reproducible `bootstrap`/`train`, [model card](docs/MODEL_CARD.md) |
-| **Persistence** | SQLAlchemy; SQLite local or PostgreSQL via Compose; event idempotency | Tested deduplication |
+| **Persistence** | SQLite/PostgreSQL; Alembic migrations; conflict-safe flow/alert writes | Migration, deduplication and concurrency tests |
 | **Alert management** | Risk tiers, explanations as heuristic signals, open/investigating/resolved/false-positive states, audit trail | API + lifecycle tests |
 | **Web application** | Responsive same-origin dashboard, charts, alert filters, operator triage | HTML/CSS/JS + FastAPI |
 | **Replaying telemetry** | Rate-limited CLI JSONL HTTP replay, with API-key authorization | CLI and API tests |
@@ -101,7 +101,18 @@ Windows PowerShell equivalent:
 $env:NETWORKPULSE_API_KEY = python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-### 3. Train and load a reproducible demo
+### 3. Initialize / migrate the database
+
+Before your first bootstrap, or **after updating from the 0.1 release**, run:
+
+```bash
+networkpulse db status
+networkpulse db upgrade
+```
+
+Existing SQLite databases are backed up automatically before a required migration. For a separate manual backup, use `networkpulse db backup --output data/pre-upgrade.sqlite`. See the [database migration & recovery runbook](docs/DATABASE_MIGRATIONS.md). If you have already bootstrapped a demo with an older ZIP, **do not delete your `data/` folder**.
+
+### 4. Train and load a reproducible demo
 
 ```bash
 networkpulse bootstrap
@@ -109,7 +120,7 @@ networkpulse bootstrap
 
 This command **trains a model from synthetic data**, writes it to `data/model.joblib`, creates a local SQLite database at `data/networkpulse.db`, and inserts the **chronological holdout** events for dashboard demonstration. Re-running is idempotent for the same seed/dataset. The model artifact and database are ignored by Git.
 
-### 4. Run the API + dashboard
+### 5. Run the API + dashboard
 
 ```bash
 uvicorn networkpulse.api:create_app --factory --host 127.0.0.1 --port 8000
@@ -119,7 +130,7 @@ Open **http://127.0.0.1:8000** for the dashboard or **http://127.0.0.1:8000/docs
 
 > **Protect your API key.** Ingestion and alert status mutation endpoints require the `X-API-Key` header. Read-only dashboards and model metadata are available to users who can reach the service, so the default bind is localhost.
 
-### 5. Ingest real-format sample metadata
+### 6. Ingest real-format sample metadata
 
 With the previous setup still available:
 
@@ -185,7 +196,7 @@ This command reads `NETWORKPULSE_API_KEY` from the environment and sends batches
 
 ## Docker & PostgreSQL
 
-The included Compose stack runs the **same Python API/dashboard** with PostgreSQL persistence and a writable model volume. This is a localhost development deployment, **not** hardened internet hosting.
+The included local-development Compose stack runs the **same Python API/dashboard** with PostgreSQL persistence and a writable model volume. This is a localhost development deployment, **not** hardened internet hosting.
 
 ```bash
 cp .env.example .env
@@ -193,13 +204,13 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Do not commit `.env`. The Compose deployment is bound to `127.0.0.1:8000` by default. See [Operations](docs/OPERATIONS.md) for security, upgrades, migrations and known limitations.
+Compose runs a schema migration before bootstrapping the demo; do not use this startup mechanism as a multi-replica production migration strategy. Do not commit `.env`. The Compose deployment is bound to `127.0.0.1:8000` by default. See [Operations](docs/OPERATIONS.md) for security, upgrades, migrations and known limitations.
 
 ## Quality & verification
 
 - Automated **pytest** checks cover parsers, schema validation, time-ordered training, model serialization, authenticated ingest, idempotency, alert audit and CLI commands.
 - `ruff check networkpulse tests` and `python -m compileall -q networkpulse` are configured in GitHub Actions for **Python 3.11 and 3.12**.
-- Local execution recorded **23 passed** with **92% combined module coverage** (Python 3.13, before publishing). GitHub Actions results should be checked independently; the badge reflects the workflow's actual state.
+- The original 0.1 release recorded **23 passing tests** and **92% local coverage**; the DB integrity upgrade adds regression, concurrency, schema migration, and backup/restore tests. Review current **GitHub Actions results** for the latest verified count/coverage.
 - Browser UI is included and locally served; the CLI/API/model tests do **not** constitute a full visual or browser E2E test.
 
 ## Repository layout
@@ -219,7 +230,9 @@ NetworkPulse-AI/
 │   └── static/           # Responsive HTML/CSS/JavaScript dashboard
 ├── tests/                # Pytest suite
 ├── examples/             # Small illustrative Zeek / Suricata logs
-├── docs/                 # Architecture, model card, operations, risks
+├── alembic/              # Versioned schema migrations
+├── alembic.ini
+├── docs/                 # Architecture, model card, DB migration & operations
 ├── .github/workflows/    # Python quality gates
 ├── Dockerfile
 ├── compose.yaml
@@ -228,7 +241,7 @@ NetworkPulse-AI/
 
 ## Limitations & future directions
 
-Implemented: **batch/file ingestion and throttled replay**, not continuous packet sniffing or Kafka streaming; **Isolation Forest**, not a production-certified threat engine; **manual triage**, not automatic incident blocking; **API-key protection**, not enterprise RBAC/OIDC.
+Implemented: **batch/file ingestion, bounded atomic SQL upserts, Alembic migrations and throttled replay**, not continuous packet sniffing or Kafka streaming; **Isolation Forest**, not a production-certified threat engine; **manual triage**, not automatic incident blocking; **API-key protection**, not enterprise RBAC/OIDC.
 
 Planned, **not implemented**: Kafka/Redpanda + ClickHouse, Zeek/Suricata continuous collectors, model drift monitoring and rolling retraining, formal RBAC and audit export, network topology enrichment, Helm/Kubernetes and multi-sensor benchmarks. See [roadmap](docs/ROADMAP.md).
 

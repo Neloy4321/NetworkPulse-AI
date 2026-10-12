@@ -7,11 +7,12 @@
 ```bash
 export NETWORKPULSE_API_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
 python -m pip install -e '.[dev]'
+networkpulse db upgrade
 networkpulse bootstrap
 uvicorn networkpulse.api:create_app --factory --host 127.0.0.1 --port 8000
 ```
 
-The command writes a local SQLite database and detector artifact into ignored `data/` paths. Do not expose this server directly to the internet.
+The migration command creates or upgrades the database schema before ingestion. It backs up existing SQLite files when a revision change is necessary. A SQLite database and detector artifact are written into ignored `data/` paths. Do not expose this server directly to the internet.
 
 ### Docker Compose with PostgreSQL
 
@@ -23,6 +24,10 @@ docker compose up --build
 ```
 
 `db` runs PostgreSQL 16; `api` waits for its health check and bootstraps a synthetic demo model if the persisted volume does not yet have one. Application access is bound to **localhost:8000**, not every host interface. Compose secrets are passed as environment variables for local convenience; hosted production should use a secrets manager.
+
+## Migration and database backup
+
+Run `networkpulse db upgrade` **before** `networkpulse bootstrap` or the FastAPI service. For existing local data, back up the SQLite file first, then migrate in place. The migration runbook covers revision checks, legacy DB recognition and recovery: [Database Migrations](DATABASE_MIGRATIONS.md). PostgreSQL must be backed up and tested separately before a production migration.
 
 ## Security considerations
 
@@ -41,7 +46,7 @@ docker compose up --build
 - Replaying the same event does not create multiple flow records or alerts in ordinary sequential operation.
 - The `bootstrap` CLI reuses the existing model if present. Delete/retrain **only in your own local environment** when you intentionally change the training data or feature contract.
 - Back up PostgreSQL and models; keep an external copy of the training inputs, schema and validation results.
-- No automated drift monitoring, migration framework or multi-tenant isolation is implemented.
+- Alembic schema migrations and safe SQLite backup are available, but automated retention, drift monitoring and multi-tenant isolation are not implemented.
 
 ## Health checks
 
@@ -64,4 +69,4 @@ docker compose up --build
 
 ## Scalability and future security improvements
 
-This is a single-worker engineering example. For concurrent replay and high-throughput sensors, use bulk ingestion with database upsert, a queue, structured logging, connector backpressure, connection pooling, delivery acknowledgments, retention policies and authorization per tenant. Those systems are **not implemented** in v0.1.0.
+This remains a single-service engineering example. Conflict-safe batched inserts and transactional alert creation are implemented in v0.2, but high-throughput validation and PostgreSQL integration tests are **not** complete. Future work includes reliable queues, backpressure, concurrent collector coordination, monitoring, retention/archival automation and tenant-level authorization. See [Database Migrations](DATABASE_MIGRATIONS.md).
