@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="400" viewBox="0 0 1100 400" role="img" aria-label="NetworkPulse AI architecture showing flow sensors, validation, Isolation Forest, persistence, and investigation UI">
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0b1724"/><stop offset="1" stop-color="#151f2b"/></linearGradient>
+  <linearGradient id="path" x1="0" y1="0" x2="1"><stop stop-color="#5ed5c2"/><stop offset="0.5" stop-color="#80b9ec"/><stop offset="1" stop-color="#ebbc84"/></linearGradient>
+</defs>
+<rect x="1" y="1" width="1098" height="398" rx="18" fill="url(#bg)" stroke="#344a5d" stroke-width="1.5"/>
+<g font-family="monospace" letter-spacing="2"><text x="35" y="36" font-size="13" fill="#a8c1cf">NETWORKPULSE / SYSTEM ARCHITECTURE</text><text x="1065" y="36" text-anchor="end" font-size="12" fill="#6ed4c4">FLOW METADATA ONLY</text></g>
+<path d="M30 51H1070" stroke="#2b4254"/>
+<g font-family="Arial,sans-serif" text-anchor="middle">
+  <g><rect x="29" y="95" width="186" height="202" rx="13" fill="#102432" stroke="#377b77"/><text x="122" y="122" fill="#6ddcc8" font-size="18" font-weight="700">TELEMETRY</text><text x="122" y="161" fill="#e6f2f9" font-size="16">Zeek conn.log</text><text x="122" y="196" fill="#e6f2f9" font-size="16">Suricata EVE</text><text x="122" y="231" fill="#e6f2f9" font-size="16">Canonical JSONL</text><text x="122" y="268" fill="#9fbfc7" font-size="13">Seeded simulator</text></g>
+  <g><rect x="248" y="95" width="186" height="202" rx="13" fill="#142735" stroke="#417a88"/><text x="341" y="122" fill="#90c7dc" font-size="18" font-weight="700">VALIDATION</text><text x="341" y="161" fill="#e6f2f9" font-size="16">Canonical schema</text><text x="341" y="196" fill="#e6f2f9" font-size="16">Type / IP checks</text><text x="341" y="231" fill="#e6f2f9" font-size="16">UTC timestamps</text><text x="341" y="268" fill="#9fbfc7" font-size="13">Dedup identity</text></g>
+  <g><rect x="467" y="95" width="186" height="202" rx="13" fill="#182539" stroke="#4d769a"/><text x="560" y="122" fill="#8ebff4" font-size="18" font-weight="700">MODEL</text><text x="560" y="161" fill="#e6f2f9" font-size="16">Flow features</text><text x="560" y="196" fill="#e6f2f9" font-size="16">Isolation Forest</text><text x="560" y="231" fill="#e6f2f9" font-size="16">Calibrated threshold</text><text x="560" y="268" fill="#9fbfc7" font-size="13">Risk / signal clues</text></g>
+  <g><rect x="686" y="95" width="186" height="202" rx="13" fill="#24262f" stroke="#856f58"/><text x="779" y="122" fill="#edc38d" font-size="18" font-weight="700">DATA STORE</text><text x="779" y="161" fill="#e6f2f9" font-size="16">SQLAlchemy</text><text x="779" y="196" fill="#e6f2f9" font-size="16">SQLite / PostgreSQL</text><text x="779" y="231" fill="#e6f2f9" font-size="16">Alert lifecycle</text><text x="779" y="268" fill="#b9b5b4" font-size="13">Audit records</text></g>
+  <g><rect x="905" y="95" width="166" height="202" rx="13" fill="#152a30" stroke="#468b82"/><text x="988" y="122" fill="#78dbcb" font-size="18" font-weight="700">OPERATIONS</text><text x="988" y="161" fill="#e6f2f9" font-size="16">FastAPI</text><text x="988" y="196" fill="#e6f2f9" font-size="16">Web dashboard</text><text x="988" y="231" fill="#e6f2f9" font-size="16">Alert triage</text><text x="988" y="268" fill="#9fbfc7" font-size="13">API-key writes</text></g>
+</g>
+<g stroke="url(#path)" stroke-width="2" fill="none" stroke-linecap="round">
+<path d="M215 195H248 M434 195H467 M653 195H686 M872 195H905"/>
+</g>
+<g fill="#9ff8e6">
+<circle r="4"><animateMotion dur="2.0s" repeatCount="indefinite" path="M215 195H248"/></circle>
+<circle r="4"><animateMotion dur="2.5s" repeatCount="indefinite" path="M434 195H467"/></circle>
+<circle r="4"><animateMotion dur="2.2s" repeatCount="indefinite" path="M653 195H686"/></circle>
+<circle r="4"><animateMotion dur="2.7s" repeatCount="indefinite" path="M872 195H905"/></circle>
+</g>
+<path d="M52 325H1048" stroke="url(#path)" stroke-width="1.5" stroke-dasharray="13 12"><animate attributeName="stroke-dashoffset" from="0" to="-80" dur="16s" repeatCount="indefinite"/></path>
+<text x="550" y="350" fill="#9fb1c0" font-size="14" font-family="monospace" text-anchor="middle">REPRODUCIBLE EXPERIMENTS  •  AUDITABLE TRIAGE  •  HONEST MODEL PROVENANCE</text>
+<text x="550" y="374" fill="#738ea2" font-size="11" font-family="monospace" text-anchor="middle">DEMONSTRATION ENGINEERING SYSTEM — NOT A PRODUCTION-CERTIFIED IDS</text>
+</svg>

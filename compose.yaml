@@ -1,0 +1,36 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: networkpulse
+      POSTGRES_USER: networkpulse
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U networkpulse -d networkpulse"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks: [internal]
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://networkpulse:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/networkpulse
+      NETWORKPULSE_API_KEY: ${NETWORKPULSE_API_KEY:?Set NETWORKPULSE_API_KEY in .env}
+      MODEL_PATH: /app/data/model.joblib
+    volumes:
+      - model_data:/app/data
+    ports:
+      - "127.0.0.1:8000:8000"
+    networks: [internal]
+volumes:
+  db_data:
+  model_data:
+networks:
+  internal:
