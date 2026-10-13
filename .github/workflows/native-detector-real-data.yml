@@ -1,0 +1,47 @@
+name: Real-data native detector integration
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/native-detector-real-data.yml'
+      - 'networkpulse/evaluation/live_unsw.py'
+      - 'tests/test_real_unsw_canonical.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-real-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -e . 'gdown>=5.2,<6'
+      - name: Download authorized research dataset to ephemeral runner
+        run: |
+          python - <<'PY'
+          import gdown, pathlib
+          dest = pathlib.Path('dataset-source.zip')
+          result = gdown.download(id='16eIgENKYpiLwJNHZWRrYdPfGj6AOOtkT', output=str(dest), quiet=True, fuzzy=True)
+          if not result or not dest.exists() or dest.stat().st_size != 586382286:
+              raise RuntimeError('unsw source incomplete or unexpectedly changed')
+          PY
+      - name: Evaluate actual NetworkPulse model architecture on real capture
+        run: |
+          python -m networkpulse.evaluation.live_unsw --zip dataset-source.zip \
+            --output real-reports/native-unsw.json
+      - name: Upload metadata-only evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-unsw-evidence
+          path: real-reports/*.json
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Delete source ZIP
+        if: always()
+        run: rm -f dataset-source.zip
