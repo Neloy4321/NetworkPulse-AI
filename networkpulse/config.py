@@ -22,6 +22,7 @@ class Settings:
     oidc_audience: str = ""
     oidc_jwks_url: str = ""
     oidc_role_claim: str = "networkpulse_role"
+    redis_metrics_url: str = ""
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -45,6 +46,7 @@ class Settings:
             model_path=Path(os.getenv("MODEL_PATH", "data/model.joblib")),
             model_sha256=os.getenv("MODEL_SHA256", ""),
             api_key=key,
+            redis_metrics_url=os.getenv("REDIS_METRICS_URL", ""),
             max_batch=int(os.getenv("MAX_BATCH", "250")),
             max_body_bytes=int(os.getenv("MAX_BODY_BYTES", "1000000")),
             mutation_rate_per_minute=int(os.getenv("MUTATION_RATE_PER_MINUTE", "120")),

@@ -1,7 +1,7 @@
 {
   "id": null,
   "uid": "networkpulse-api",
-  "title": "NetworkPulse \u2014 API & ML",
+  "title": "NetworkPulse — API & ML",
   "schemaVersion": 39,
   "version": 1,
   "timezone": "utc",
@@ -134,6 +134,90 @@
         {
           "expr": "sum(rate(networkpulse_alert_updates_total[5m]))",
           "legendFormat": "Alert updates per second"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Redis worker lag",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "networkpulse-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "targets": [
+        {
+          "expr": "networkpulse_stream_lag",
+          "legendFormat": "Redis worker lag"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Redis pending acknowledgements",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "networkpulse-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "targets": [
+        {
+          "expr": "networkpulse_stream_pending",
+          "legendFormat": "Redis pending acknowledgements"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Redis dead-letter depth",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "networkpulse-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "targets": [
+        {
+          "expr": "networkpulse_stream_dead_letter_depth",
+          "legendFormat": "Redis dead-letter depth"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Redis metrics connectivity",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "networkpulse-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
+      "targets": [
+        {
+          "expr": "networkpulse_stream_redis_reachable",
+          "legendFormat": "Redis metrics connectivity"
         }
       ]
     }

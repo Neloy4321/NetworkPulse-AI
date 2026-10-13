@@ -101,7 +101,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/metrics", include_in_schema=False)
     def metrics(principal: Principal = Depends(read_scope)):
         principal.require("admin")
-        return exporter()
+        return exporter(settings.redis_metrics_url)
 
     @app.get("/health/live", tags=["operations"])
     def liveness():

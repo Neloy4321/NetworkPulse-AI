@@ -65,6 +65,7 @@ services:
       DATABASE_URL: postgresql+psycopg://networkpulse:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/networkpulse
       NETWORKPULSE_API_KEY: ${NETWORKPULSE_API_KEY:?Set NETWORKPULSE_API_KEY in .env}
       MODEL_PATH: /app/data/model.joblib
+      REDIS_METRICS_URL: redis://redis:6379/0
     volumes:
       - model_data:/app/data
     ports:
