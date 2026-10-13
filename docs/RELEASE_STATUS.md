@@ -30,3 +30,15 @@ To upgrade a v0.1/v0.2 SQLite DB, stop the old API, back up `data/networkpulse.d
 - Multi-stage container recipe, TLS/OIDC reverse-proxy **example**, and scheduled pip-audit workflow definition.
 
 No actual real-world detection measurements, HTTPS staging deployment, or browser OIDC login results have been produced by these additions. Complete engineering scope and real-world evidence remain separate.
+
+
+## Automated browser end-to-end smoke (2026-10-13 update)
+
+`.github/workflows/browser-e2e.yml` now provisions Chromium in GitHub Actions,
+creates a disposable synthetic model/SQLite database, boots a local FastAPI
+server and verifies that the real browser starts with **All** alert filters,
+loads 325 synthetic holdout flows, renders the alerts table, changes a filter,
+restores the default and remains operational at mobile width. The test checks
+that the browser does not send empty optional filters and does not receive a
+non-200 alert query. This is a regression check, not a production browser
+compatibility matrix or a penetration test.

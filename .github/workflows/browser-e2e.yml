@@ -1,0 +1,37 @@
+name: Browser end-to-end smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chromium:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NETWORKPULSE_API_KEY: ci-browser-local-secret-long-enough
+      DATABASE_URL: sqlite:///./data/browser-e2e.db
+      MODEL_PATH: data/browser-e2e.joblib
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install app and Chromium
+        run: |
+          python -m pip install -e . "playwright>=1.50,<2"
+          python -m playwright install --with-deps chromium
+      - name: Build disposable local model and database
+        run: |
+          mkdir -p data
+          python -m networkpulse.cli db upgrade
+          python -m networkpulse.cli bootstrap --seed 42 --count 1300
+      - name: Exercise dashboard in headless Chromium
+        run: python tests/browser_e2e.py
