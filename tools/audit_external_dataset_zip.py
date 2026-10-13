@@ -146,7 +146,7 @@ def _quick_member_profile(zf: zipfile.ZipFile, item: zipfile.ZipInfo,
             chunk = stream.read(8 * 1024 * 1024)
             if not chunk:
                 break
-            physical_lines += chunk.count(b"\\n")
+            physical_lines += chunk.count(b"\n")
     return {
         "file": item.filename,
         "physical_lines": physical_lines,
