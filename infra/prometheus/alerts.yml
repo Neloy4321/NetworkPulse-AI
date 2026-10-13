@@ -1,0 +1,44 @@
+groups:
+  - name: networkpulse.local-observability
+    interval: 30s
+    rules:
+      - alert: NetworkPulseAPIDown
+        expr: up{job="networkpulse-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "NetworkPulse API scrape unavailable"
+          description: "Inspect API container and Prometheus target health."
+      - alert: NetworkPulseRedisPreviouslyConnectedUnavailable
+        expr: (networkpulse_stream_redis_reachable == 0) and (networkpulse_stream_group_exists == 1)
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Previously monitored Redis stream is unavailable"
+          description: "Check Redis service or optional streaming profile; group-present gauge may be stale during outage."
+      - alert: NetworkPulseRedisConsumerLagHigh
+        expr: networkpulse_stream_lag > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "NetworkPulse Redis consumer lag exceeds 100 flows"
+          description: "Check worker health, incoming flow rate and stream group backlog."
+      - alert: NetworkPulseRedisPendingHigh
+        expr: networkpulse_stream_pending > 25
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 25 Redis flows await acknowledgement"
+          description: "Investigate worker processing errors or stuck pending claims."
+      - alert: NetworkPulseDeadLetterQueueNotEmpty
+        expr: networkpulse_stream_dead_letter_depth > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis dead-letter queue requires operator triage"
+          description: "Investigate and safely reconcile dead-lettered flow metadata."

@@ -30,3 +30,21 @@ The scrape is optional, has short Redis timeouts, and stays available even if
 Redis is unreachable. These are queue-state snapshots, not a throughput SLA.
 The existing HTTP ingestion counter does not include worker-originated flows.
 Avoid making production claims without live sensor/load tests.
+
+
+## Prometheus operational alert rules
+
+`infra/prometheus/alerts.yml` is mounted into Prometheus by the optional
+observability Compose file. Rules evaluate API scrape failures, previously
+connected Redis outages, persistent consumer lag, pending acknowledgements and
+nonempty DLQ. Thresholds are **starter lab defaults**, not tuned SLOs, and the
+lag gauges require enabling Redis metrics in the API. Inspect evaluated rules
+at `http://127.0.0.1:9090/alerts`.
+
+**Important:** Local Prometheus alert-rule evaluation does *not* deliver
+notifications. A properly configured, authenticated Alertmanager or other
+controlled notification sink is still required for production paging.
+With streaming intentionally disabled, Redis metrics may report unreachable;
+the Redis-outage rule only activates after the stream-group-exists gauge was
+previously observed. Never expose Alertmanager or Grafana directly to
+untrusted networks.

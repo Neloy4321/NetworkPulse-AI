@@ -52,3 +52,9 @@ jobs:
         run: pytest --cov=networkpulse --cov-report=term-missing
       - name: Compile all modules
         run: python -m compileall -q networkpulse alembic
+      - name: Validate Prometheus config and alerting rules
+        run: >
+          docker run --rm --entrypoint /bin/promtool
+          -v "$PWD/infra/prometheus:/etc/prometheus:ro"
+          prom/prometheus:v2.55.1
+          check config /etc/prometheus/prometheus.yaml
