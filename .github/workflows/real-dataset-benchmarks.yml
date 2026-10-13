@@ -1,0 +1,66 @@
+name: External dataset real-world baselines
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/real-dataset-benchmarks.yml'
+      - 'tools/real_data_benchmark.py'
+      - 'tests/test_real_data_benchmark.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dataset: cic2017
+            archive_id: 1OLwT2I4sueiDJAO_ys_sn_2CO60OveBN
+            expected_bytes: '235102953'
+          - dataset: unsw_raw
+            archive_id: 16eIgENKYpiLwJNHZWRrYdPfGj6AOOtkT
+            expected_bytes: '586382286'
+          - dataset: toniot
+            archive_id: 1rkNwQzrkpcnmtM8G5a-O7dAtr-y_9wFy
+            expected_bytes: '3372478580'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install benchmark requirements
+        run: python -m pip install -e . 'gdown>=5.2,<6'
+      - name: Download only authorized public dataset archive
+        env:
+          ZIP_ID: ${{ matrix.archive_id }}
+          EXPECTED_SIZE: ${{ matrix.expected_bytes }}
+        run: |
+          python - <<'PY'
+          import gdown, os, pathlib
+          dest = pathlib.Path('dataset-source.zip')
+          result = gdown.download(id=os.environ['ZIP_ID'], output=str(dest), quiet=True, fuzzy=True)
+          if not result or not dest.exists() or dest.stat().st_size != int(os.environ['EXPECTED_SIZE']):
+              raise RuntimeError('source missing/partial/changed: no benchmark claim')
+          print('Verified expected ZIP size:', dest.stat().st_size)
+          PY
+      - name: Fit and evaluate capture-separated baselines
+        run: |
+          python tools/real_data_benchmark.py \
+            --zip dataset-source.zip --dataset ${{ matrix.dataset }} \
+            --max-train 2200 --max-test 1300 --seed 42 \
+            --output real-reports/${{ matrix.dataset }}.json
+      - name: Preserve aggregate report only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-benchmark-${{ matrix.dataset }}
+          path: real-reports/*.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Remove ephemeral raw ZIP
+        if: always()
+        run: rm -f dataset-source.zip
