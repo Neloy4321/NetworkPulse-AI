@@ -74,6 +74,140 @@ def _decode_header(zf: zipfile.ZipFile, item: zipfile.ZipInfo):
         return {"file": item.filename, "error": type(exc).__name__ + ": " + str(exc)[:140]}
 
 
+
+def _csv_columns_from_dictionary(zf: zipfile.ZipFile) -> list[str]:
+    """UNSW raw partitions use headerless rows; dictionary supplies 49 names."""
+    try:
+        with zf.open("NUSW-NB15_features.csv") as source:
+            content = source.read(16000).decode("utf-8-sig", errors="replace")
+        return [row["Name"].strip() for row in csv.DictReader(io.StringIO(content))
+                if row.get("Name")]
+    except (KeyError, UnicodeError, csv.Error):
+        return []
+
+
+def _quick_member_profile(zf: zipfile.ZipFile, item: zipfile.ZipInfo,
+                          columns: list[str], *, has_header: bool) -> dict:
+    """Count physical CSV lines and sample five byte windows without extracting.
+
+    Sampled label proportions are *not* population proportions. Compressed rows
+    with embedded line breaks can make physical-line counts differ from CSV rows.
+    """
+    from datetime import datetime, timezone
+
+    samples = 0
+    invalid = 0
+    label_values = Counter()
+    type_values = Counter()
+    time_bounds = []
+    lower = [v.lower().strip() for v in columns]
+    label_i = lower.index("label") if "label" in lower else None
+    type_i = next((lower.index(n) for n in ("type", "attack_cat")
+                   if n in lower), None)
+    time_i = next((lower.index(n) for n in ("ts", "stime", "timestamp")
+                   if n in lower), None)
+
+    for fraction in (0, 0.2, 0.5, 0.8, 0.97):
+        with zf.open(item) as stream:
+            if fraction:
+                stream.seek(int(max(0, item.file_size - 65536) * fraction))
+                stream.readline(1000000)  # Discard a possibly partial line.
+            elif has_header:
+                stream.readline(1000000)  # Header only in one logical CSV.
+            for _ in range(96):
+                line = stream.readline(1000000)
+                if not line:
+                    break
+                if not line.strip():
+                    continue
+                try:
+                    row = next(csv.reader(io.StringIO(line.decode("utf-8-sig", errors="replace"))))
+                except (csv.Error, StopIteration):
+                    invalid += 1
+                    continue
+                if len(row) != len(columns):
+                    invalid += 1
+                    continue
+                samples += 1
+                if label_i is not None:
+                    label_values[row[label_i].strip() or "[blank]"] += 1
+                if type_i is not None:
+                    type_values[row[type_i].strip() or "[blank]"] += 1
+                if time_i is not None:
+                    try:
+                        stamp = float(row[time_i])
+                        if 1_000_000_000 < stamp < 3_000_000_000:
+                            time_bounds.append(stamp)
+                    except (TypeError, ValueError, OverflowError):
+                        pass
+    physical_lines = 0
+    with zf.open(item) as stream:
+        while True:
+            chunk = stream.read(8 * 1024 * 1024)
+            if not chunk:
+                break
+            physical_lines += chunk.count(b"\\n")
+    return {
+        "file": item.filename,
+        "physical_lines": physical_lines,
+        "approx_records_if_no_embedded_newlines": max(0, physical_lines - int(has_header)),
+        "header_present": has_header,
+        "expected_columns": len(columns),
+        "stratified_byte_window_sample_count": samples,
+        "sampled_bad_column_count": invalid,
+        "sampled_labels": dict(label_values.most_common(16)),
+        "sampled_attack_types": dict(type_values.most_common(25)),
+        "sampled_timestamp_min_utc": datetime.fromtimestamp(
+            min(time_bounds), tz=timezone.utc).isoformat() if time_bounds else None,
+        "sampled_timestamp_max_utc": datetime.fromtimestamp(
+            max(time_bounds), tz=timezone.utc).isoformat() if time_bounds else None,
+    }
+
+
+def profile_archive(zf: zipfile.ZipFile, files: list[zipfile.ZipInfo]) -> dict:
+    dictionary_columns = _csv_columns_from_dictionary(zf)
+    profiles = []
+    errors = []
+    for item in files:
+        if not item.filename.lower().endswith(".csv") or item.filename.endswith("_features.csv"):
+            continue
+        try:
+            with zf.open(item) as stream:
+                first = stream.readline(1000000).decode("utf-8-sig", errors="replace")
+            header = next(csv.reader(io.StringIO(first)), [])
+            # Zeek-like archive has named headers. Raw UNSW uses 49 dictionary names.
+            has_header = "ts" in header[:3] and "src_ip" in header[:6]
+            columns = header if has_header else dictionary_columns
+            if not columns:
+                errors.append({"file": item.filename, "error": "no matching header/dictionary"})
+                continue
+            profiles.append(_quick_member_profile(
+                zf, item, columns, has_header=has_header
+            ))
+        except Exception as exc:
+            errors.append({"file": item.filename,
+                           "error": type(exc).__name__ + ": " + str(exc)[:130]})
+    labels = Counter()
+    types = Counter()
+    for row in profiles:
+        labels.update(row["sampled_labels"])
+        types.update(row["sampled_attack_types"])
+    return {
+        "dictionary_column_count": len(dictionary_columns),
+        "dictionary_column_names": dictionary_columns,
+        "files_profiled": len(profiles),
+        "physical_lines_total": sum(v["physical_lines"] for v in profiles),
+        "sampled_rows_total": sum(v["stratified_byte_window_sample_count"]
+                                  for v in profiles),
+        "sampled_label_counts_not_prevalence": dict(labels.most_common(30)),
+        "sampled_attack_type_counts_not_prevalence": dict(types.most_common(35)),
+        "member_profiles": profiles,
+        "profiling_errors": errors,
+        "sample_method": "5 deterministic byte windows per file, up to 96 lines each; "
+                         "counts are samples, not exact label prevalences",
+    }
+
+
 def inspect_zip(path: Path, *, archive_label: str, drive_file_id: str):
     started = time.monotonic()
     with zipfile.ZipFile(path, allowZip64=True) as zf:
@@ -105,6 +239,7 @@ def inspect_zip(path: Path, *, archive_label: str, drive_file_id: str):
             "csv_header_samples": samples,
             "seconds_to_inspect": round(time.monotonic() - started, 2),
         }
+        result["row_profile"] = profile_archive(zf, files)
         return result
 
 
@@ -149,6 +284,13 @@ def main():
     }
     compact["files_preview"] = result.get("file_list", [])[:30]
     compact["sample_headers"] = result.get("csv_header_samples", [])[:8]
+    profile = result.get("row_profile", {})
+    compact["row_profile_summary"] = {key: profile.get(key) for key in (
+        "files_profiled", "physical_lines_total", "dictionary_column_count",
+        "sampled_rows_total", "sampled_label_counts_not_prevalence",
+        "sampled_attack_type_counts_not_prevalence", "profiling_errors"
+    ) if key in profile}
+    compact["per_file_profiles_preview"] = profile.get("member_profiles", [])[:24]
     print("NETWORKPULSE_ARCHIVE_AUDIT_SUMMARY_START", flush=True)
     print(json.dumps(compact, ensure_ascii=False, separators=(",", ":")), flush=True)
     print("NETWORKPULSE_ARCHIVE_AUDIT_SUMMARY_END", flush=True)
