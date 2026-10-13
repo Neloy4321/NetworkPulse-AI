@@ -53,3 +53,14 @@ per-mutation local X-API-Key prompt. Dynamic case fields are inserted with
 `textContent`, avoiding unsanitized HTML from investigator notes. Chromium
 E2E checks the Details panel, empty history and closing the panel.
 Browser SSO/PKCE remains a separate production identity integration gap.
+
+
+## CI streaming end-to-end integration
+
+`tests/test_stream_worker_postgres_e2e.py` exercises the **real** Redis 7
+service and PostgreSQL 16 service from GitHub Actions: a synthetic event is
+enqueued, the actual worker's `process_events(..., once=True)` validates
+and scores it, the database stores one row, Redis ACK/XDEL clears the pending
+entry, then the identical event is replayed and database idempotency is
+verified. This is an integration correctness test, not a long-running load
+test or a guarantee of at-least-once recovery under real-world failures.
