@@ -89,6 +89,16 @@ References: [Model lifecycle](docs/MODEL_LIFECYCLE.md) · [Retention](docs/RETEN
 - Optional `MODEL_SHA256` environment setting rejects unrecognized model files at API/worker startup before deserialization.
 - Multi-stage Python Dockerfile, manual TLS/OIDC staging example and scheduled dependency vulnerability auditing workflow. **None of these configurations demonstrates a completed public staging deployment, real IdP login or passed external security assessment.** See [TLS staging](docs/TLS_STAGING.md).
 
+
+
+## Verified external offline benchmarks (October 2026)
+
+All three user-supplied archives (CIC-IDS2017, UNSW-NB15 raw and TON-IoT-compatible)
+were evaluated in [GitHub Actions](https://github.com/Neloy4321/NetworkPulse-AI/actions/runs/38461006624).
+See [full real-data results](docs/REAL_DATA_RESULTS.md). The published figures are
+**offline, separate-capture baseline measurements**, not accuracy of the deployed
+Zeek/Suricata model. Source-data files remain outside Git.
+
 ## Dashboard
 
 The custom browser console features flow counts, risk summaries, five-minute UTC traffic windows, protocol distribution, a reviewable alert queue, and transparent model provenance. The app uses **no remote frontend CDNs** and works on localhost.

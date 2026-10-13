@@ -1,0 +1,488 @@
+{
+  "report_generated_date": "2026-10-14",
+  "github_actions_run": "https://github.com/Neloy4321/NetworkPulse-AI/actions/runs/38461006624",
+  "datasets": [
+    {
+      "dataset": "toniot",
+      "real_external_data": true,
+      "offline_baselines_only": true,
+      "public_archive_sha256": "411ec9768cc06586265095292f3fdc78f10306d26c9e4e227079f7c286520ad0",
+      "archive_size_bytes": 3372478580,
+      "source_files": {
+        "train": {
+          "file_name": "Network_dataset_1.csv",
+          "file_size_uncompressed": 146725605,
+          "zip_member_crc32": "ba26206b",
+          "valid_rows_full_scan": 999825,
+          "invalid_rows_full_scan": 175,
+          "label_counts_full_scan": {
+            "0": 208504,
+            "1": 791321
+          },
+          "sampled_rows": 2200,
+          "sampling": "uniform seeded reservoir across valid rows"
+        },
+        "test": {
+          "file_name": "Network_dataset_23.csv",
+          "file_size_uncompressed": 51705634,
+          "zip_member_crc32": "f7ff7c7c",
+          "valid_rows_full_scan": 339017,
+          "invalid_rows_full_scan": 4,
+          "label_counts_full_scan": {
+            "0": 33471,
+            "1": 305546
+          },
+          "sampled_rows": 1300,
+          "sampling": "uniform seeded reservoir across valid rows"
+        }
+      },
+      "split": {
+        "train_capture": "Network_dataset_1.csv",
+        "test_capture": "Network_dataset_23.csv",
+        "file_separated_holdout": true,
+        "site_independence_verified": false,
+        "training_and_test_capture_time_separated": true,
+        "calibration_chronological": true,
+        "train_timestamp_min": 1554200703,
+        "train_timestamp_max": 1556025780,
+        "test_timestamp_min": 1556485778,
+        "test_timestamp_max": 1556549049,
+        "max_fit_timestamp": 1554326507,
+        "min_calibration_timestamp": 1554326856,
+        "supervised_reference_unavailable": "Not enough training classes/calibration"
+      },
+      "sample_counts": {
+        "benign_available": 132,
+        "fit_benign": 99,
+        "calibration_benign": 33,
+        "test": 593,
+        "test_benign": 137,
+        "test_attacks": 456
+      },
+      "deduplication_during_sample": {
+        "train_within": 367,
+        "test_within_and_cross": 707
+      },
+      "attack_categories_test": {
+        "backdoor": 450,
+        "mitm": 6
+      },
+      "model_results": {
+        "isolation_forest": {
+          "precision": 0.03704,
+          "recall": 0.00219,
+          "f1": 0.00414,
+          "false_positive_rate": 0.18978,
+          "roc_auc": 0.46867,
+          "pr_auc": 0.78396,
+          "confusion_matrix": {
+            "tn": 111,
+            "fp": 26,
+            "fn": 455,
+            "tp": 1
+          },
+          "calibrated_threshold": 0.1774236,
+          "alert_fraction": 0.04553,
+          "per_attack_recall": {
+            "backdoor": 0,
+            "mitm": 0.16667
+          }
+        },
+        "lof_novelty": {
+          "precision": 0,
+          "recall": 0,
+          "f1": 0,
+          "false_positive_rate": 0,
+          "roc_auc": 0.30788,
+          "pr_auc": 0.6603,
+          "confusion_matrix": {
+            "tn": 137,
+            "fp": 0,
+            "fn": 456,
+            "tp": 0
+          },
+          "calibrated_threshold": 4.072093,
+          "alert_fraction": 0,
+          "per_attack_recall": {
+            "backdoor": 0,
+            "mitm": 0
+          }
+        },
+        "fixed_rules": {
+          "precision": 0,
+          "recall": 0,
+          "f1": 0,
+          "false_positive_rate": 0.05839,
+          "roc_auc": 0.60065,
+          "pr_auc": 0.84959,
+          "confusion_matrix": {
+            "tn": 129,
+            "fp": 8,
+            "fn": 456,
+            "tp": 0
+          },
+          "calibrated_threshold": 2,
+          "alert_fraction": 0.01349,
+          "per_attack_recall": {
+            "backdoor": 0,
+            "mitm": 0
+          }
+        }
+      },
+      "sampling_seed": 42,
+      "max_train_reservoir": 2200,
+      "max_test_reservoir": 1300,
+      "data_training_scope": "selected capture file only",
+      "confidence": "held-out-day/capture within published cyber range; not unseen site",
+      "caveats": [
+        "Source ZIP has been provided by user via shared Google Drive; original distribution hashes for TON-IoT-like archive not independently matched",
+        "Feature fingerprints may merge legitimate repeated traffic; post-dedup evaluation prevalence differs from original traffic prevalence",
+        "CIC timestamp contract not verified; weekdays from capture file names, not parsed event timestamps",
+        "Train/validation and test may share lab hosts or capture infrastructure; independent network/site validity not verified",
+        "Offline feature harmonization is not deployed live Zeek/Suricata model evaluation",
+        "No published independent-site validation or live false alarm rate"
+      ]
+    },
+    {
+      "dataset": "unsw_raw",
+      "real_external_data": true,
+      "offline_baselines_only": true,
+      "public_archive_sha256": "3c7500f120405b21b44a2bf05134f49491f88a655ae3091fc1b269c4c9ece79a",
+      "archive_size_bytes": 586382286,
+      "source_files": {
+        "train": {
+          "file_name": "UNSW-NB15_1.csv",
+          "file_size_uncompressed": 168979718,
+          "zip_member_crc32": "4132173a",
+          "valid_rows_full_scan": 699938,
+          "invalid_rows_full_scan": 63,
+          "label_counts_full_scan": {
+            "0": 677723,
+            "1": 22215
+          },
+          "sampled_rows": 2200,
+          "sampling": "uniform seeded reservoir across valid rows"
+        },
+        "test": {
+          "file_name": "UNSW-NB15_4.csv",
+          "file_size_uncompressed": 97588754,
+          "zip_member_crc32": "d5fc744c",
+          "valid_rows_full_scan": 439969,
+          "invalid_rows_full_scan": 75,
+          "label_counts_full_scan": {
+            "0": 351075,
+            "1": 88894
+          },
+          "sampled_rows": 1300,
+          "sampling": "uniform seeded reservoir across valid rows"
+        }
+      },
+      "split": {
+        "train_capture": "UNSW-NB15_1.csv",
+        "test_capture": "UNSW-NB15_4.csv",
+        "file_separated_holdout": true,
+        "site_independence_verified": false,
+        "training_and_test_capture_time_separated": true,
+        "calibration_chronological": true,
+        "train_timestamp_min": 1421927443,
+        "train_timestamp_max": 1421955795,
+        "test_timestamp_min": 1424250037,
+        "test_timestamp_max": 1424262067,
+        "max_fit_timestamp": 1421947551,
+        "min_calibration_timestamp": 1421947607,
+        "supervised_fit_capture_train_count": 1522,
+        "supervised_calibration_benign_count": 508,
+        "supervised_uses_training_capture_attack_labels": true
+      },
+      "sample_counts": {
+        "benign_available": 1973,
+        "fit_benign": 1479,
+        "calibration_benign": 494,
+        "test": 785,
+        "test_benign": 719,
+        "test_attacks": 66
+      },
+      "deduplication_during_sample": {
+        "train_within": 170,
+        "test_within_and_cross": 515
+      },
+      "attack_categories_test": {
+        "Backdoor": 1,
+        "DoS": 16,
+        "Exploits": 24,
+        "Fuzzers": 12,
+        "Generic": 5,
+        "Reconnaissance": 7,
+        "Shellcode": 1
+      },
+      "model_results": {
+        "isolation_forest": {
+          "precision": 0.48,
+          "recall": 0.54545,
+          "f1": 0.51064,
+          "false_positive_rate": 0.05424,
+          "roc_auc": 0.91575,
+          "pr_auc": 0.5101,
+          "confusion_matrix": {
+            "tn": 680,
+            "fp": 39,
+            "fn": 30,
+            "tp": 36
+          },
+          "calibrated_threshold": 0.0789139,
+          "alert_fraction": 0.09554,
+          "per_attack_recall": {
+            "Generic": 0.6,
+            "Fuzzers": 0.41667,
+            "Shellcode": 1,
+            "Exploits": 0.41667,
+            "DoS": 0.75,
+            "Reconnaissance": 0.57143,
+            "Backdoor": 1
+          }
+        },
+        "lof_novelty": {
+          "precision": 0.51613,
+          "recall": 0.48485,
+          "f1": 0.5,
+          "false_positive_rate": 0.04172,
+          "roc_auc": 0.90127,
+          "pr_auc": 0.5113,
+          "confusion_matrix": {
+            "tn": 689,
+            "fp": 30,
+            "fn": 34,
+            "tp": 32
+          },
+          "calibrated_threshold": 1.8713022,
+          "alert_fraction": 0.07898,
+          "per_attack_recall": {
+            "Generic": 0.8,
+            "Fuzzers": 0.16667,
+            "Shellcode": 1,
+            "Exploits": 0.375,
+            "DoS": 0.75,
+            "Reconnaissance": 0.42857,
+            "Backdoor": 1
+          }
+        },
+        "supervised_random_forest": {
+          "precision": 0.5122,
+          "recall": 0.95455,
+          "f1": 0.66667,
+          "false_positive_rate": 0.08345,
+          "roc_auc": 0.96694,
+          "pr_auc": 0.796,
+          "confusion_matrix": {
+            "tn": 659,
+            "fp": 60,
+            "fn": 3,
+            "tp": 63
+          },
+          "calibrated_threshold": 0.1043775,
+          "alert_fraction": 0.15669,
+          "per_attack_recall": {
+            "Generic": 1,
+            "Fuzzers": 1,
+            "Shellcode": 1,
+            "Exploits": 0.95833,
+            "DoS": 0.875,
+            "Reconnaissance": 1,
+            "Backdoor": 1
+          }
+        },
+        "fixed_rules": {
+          "precision": 0,
+          "recall": 0,
+          "f1": 0,
+          "false_positive_rate": 0.00139,
+          "roc_auc": 0.62541,
+          "pr_auc": 0.16979,
+          "confusion_matrix": {
+            "tn": 718,
+            "fp": 1,
+            "fn": 66,
+            "tp": 0
+          },
+          "calibrated_threshold": 2,
+          "alert_fraction": 0.00127,
+          "per_attack_recall": {
+            "Generic": 0,
+            "Fuzzers": 0,
+            "Shellcode": 0,
+            "Exploits": 0,
+            "DoS": 0,
+            "Reconnaissance": 0,
+            "Backdoor": 0
+          }
+        }
+      },
+      "sampling_seed": 42,
+      "max_train_reservoir": 2200,
+      "max_test_reservoir": 1300,
+      "data_training_scope": "selected capture file only",
+      "confidence": "held-out-day/capture within published cyber range; not unseen site",
+      "caveats": [
+        "Source ZIP has been provided by user via shared Google Drive; original distribution hashes for TON-IoT-like archive not independently matched",
+        "Feature fingerprints may merge legitimate repeated traffic; post-dedup evaluation prevalence differs from original traffic prevalence",
+        "CIC timestamp contract not verified; weekdays from capture file names, not parsed event timestamps",
+        "Train/validation and test may share lab hosts or capture infrastructure; independent network/site validity not verified",
+        "Offline feature harmonization is not deployed live Zeek/Suricata model evaluation",
+        "No published independent-site validation or live false alarm rate"
+      ]
+    },
+    {
+      "dataset": "cic2017",
+      "real_external_data": true,
+      "offline_baselines_only": true,
+      "public_archive_sha256": "c3f26274b36c837ccf28ffd2dbf4582941c30b3ee70a635c6e5b2f87c4727928",
+      "archive_size_bytes": 235102953,
+      "source_files": {
+        "train": {
+          "file_name": "MachineLearningCVE/Wednesday-workingHours.pcap_ISCX.csv",
+          "file_size_uncompressed": 225166395,
+          "zip_member_crc32": "e1f2470a",
+          "valid_rows_full_scan": 692682,
+          "invalid_rows_full_scan": 21,
+          "label_counts_full_scan": {
+            "0": 440010,
+            "1": 252672
+          },
+          "sampled_rows": 2200,
+          "sampling": "uniform seeded reservoir across valid rows"
+        },
+        "test": {
+          "file_name": "MachineLearningCVE/Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv",
+          "file_size_uncompressed": 77123859,
+          "zip_member_crc32": "57439907",
+          "valid_rows_full_scan": 225743,
+          "invalid_rows_full_scan": 2,
+          "label_counts_full_scan": {
+            "0": 97716,
+            "1": 128027
+          },
+          "sampled_rows": 1300,
+          "sampling": "uniform seeded reservoir across valid rows"
+        }
+      },
+      "split": {
+        "train_capture": "MachineLearningCVE/Wednesday-workingHours.pcap_ISCX.csv",
+        "test_capture": "MachineLearningCVE/Friday-WorkingHours-Afternoon-DDos.pcap_ISCX.csv",
+        "file_separated_holdout": true,
+        "site_independence_verified": false,
+        "training_and_test_capture_time_separated": false,
+        "calibration_chronological": false,
+        "calibration_note": "Benign random calibration Wednesday; later Friday test",
+        "supervised_fit_capture_train_count": 1526,
+        "supervised_calibration_benign_count": 347,
+        "supervised_uses_training_capture_attack_labels": true
+      },
+      "sample_counts": {
+        "benign_available": 1394,
+        "fit_benign": 1045,
+        "calibration_benign": 349,
+        "test": 1295,
+        "test_benign": 532,
+        "test_attacks": 763
+      },
+      "deduplication_during_sample": {
+        "train_within": 165,
+        "test_within_and_cross": 5
+      },
+      "attack_categories_test": {
+        "DDoS": 763
+      },
+      "model_results": {
+        "isolation_forest": {
+          "precision": 0,
+          "recall": 0,
+          "f1": 0,
+          "false_positive_rate": 0.31391,
+          "roc_auc": 0.58722,
+          "pr_auc": 0.57204,
+          "confusion_matrix": {
+            "tn": 365,
+            "fp": 167,
+            "fn": 763,
+            "tp": 0
+          },
+          "calibrated_threshold": 0.14018,
+          "alert_fraction": 0.12896,
+          "per_attack_recall": {
+            "DDoS": 0
+          }
+        },
+        "lof_novelty": {
+          "precision": 0.11111,
+          "recall": 0.00262,
+          "f1": 0.00512,
+          "false_positive_rate": 0.03008,
+          "roc_auc": 0.52628,
+          "pr_auc": 0.57923,
+          "confusion_matrix": {
+            "tn": 516,
+            "fp": 16,
+            "fn": 761,
+            "tp": 2
+          },
+          "calibrated_threshold": 4.170256,
+          "alert_fraction": 0.0139,
+          "per_attack_recall": {
+            "DDoS": 0.00262
+          }
+        },
+        "supervised_random_forest": {
+          "precision": 0.98834,
+          "recall": 1,
+          "f1": 0.99414,
+          "false_positive_rate": 0.01692,
+          "roc_auc": 0.99386,
+          "pr_auc": 0.98817,
+          "confusion_matrix": {
+            "tn": 523,
+            "fp": 9,
+            "fn": 0,
+            "tp": 763
+          },
+          "calibrated_threshold": 0.2121117,
+          "alert_fraction": 0.59614,
+          "per_attack_recall": {
+            "DDoS": 1
+          }
+        },
+        "fixed_rules": {
+          "precision": 0,
+          "recall": 0,
+          "f1": 0,
+          "false_positive_rate": 0.00376,
+          "roc_auc": 0.34939,
+          "pr_auc": 0.54678,
+          "confusion_matrix": {
+            "tn": 530,
+            "fp": 2,
+            "fn": 763,
+            "tp": 0
+          },
+          "calibrated_threshold": 2,
+          "alert_fraction": 0.00154,
+          "per_attack_recall": {
+            "DDoS": 0
+          }
+        }
+      },
+      "sampling_seed": 42,
+      "max_train_reservoir": 2200,
+      "max_test_reservoir": 1300,
+      "data_training_scope": "selected capture file only",
+      "confidence": "held-out-day/capture within published cyber range; not unseen site",
+      "caveats": [
+        "Source ZIP has been provided by user via shared Google Drive; original distribution hashes for TON-IoT-like archive not independently matched",
+        "Feature fingerprints may merge legitimate repeated traffic; post-dedup evaluation prevalence differs from original traffic prevalence",
+        "CIC timestamp contract not verified; weekdays from capture file names, not parsed event timestamps",
+        "Train/validation and test may share lab hosts or capture infrastructure; independent network/site validity not verified",
+        "Offline feature harmonization is not deployed live Zeek/Suricata model evaluation",
+        "No published independent-site validation or live false alarm rate"
+      ]
+    }
+  ]
+}

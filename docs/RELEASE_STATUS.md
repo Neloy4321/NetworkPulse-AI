@@ -64,3 +64,13 @@ and scores it, the database stores one row, Redis ACK/XDEL clears the pending
 entry, then the identical event is replayed and database idempotency is
 verified. This is an integration correctness test, not a long-running load
 test or a guarantee of at-least-once recovery under real-world failures.
+
+
+## October 2026 real-data validation milestone
+
+All three supplied external archives were successfully benchmarked using separate
+capture files and duplicate-aware sampled holdouts: [results](REAL_DATA_RESULTS.md).
+Machine-readable aggregates are committed under `reports/real_data/`. This
+closes the previous **no real dataset run** blocker, but **not** the independent
+network/site holdout or deployed real-sensor verification gates. As a result,
+requirement #1 cannot be called 100% production/research validated yet.
