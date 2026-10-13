@@ -42,3 +42,14 @@ restores the default and remains operational at mobile width. The test checks
 that the browser does not send empty optional filters and does not receive a
 non-200 alert query. This is a regression check, not a production browser
 compatibility matrix or a penetration test.
+
+
+## SOC browser casework addition (2026-10-13)
+
+The dashboard now opens each alert's metadata detail, historical status
+changes and analyst notes through existing read-only API endpoints. The
+operator can assign/unassign analysts and add audit notes with an explicit
+per-mutation local X-API-Key prompt. Dynamic case fields are inserted with
+`textContent`, avoiding unsanitized HTML from investigator notes. Chromium
+E2E checks the Details panel, empty history and closing the panel.
+Browser SSO/PKCE remains a separate production identity integration gap.

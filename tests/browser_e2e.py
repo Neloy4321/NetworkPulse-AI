@@ -59,6 +59,16 @@ def main():
                 assert page.locator("#status-filter").input_value() == ""
                 assert page.locator("#severity-filter").input_value() == ""
                 assert page.locator("#alerts-body tr").count() > 0
+                page.locator("button[data-case]").first.click()
+                page.wait_for_function(
+                    "() => document.querySelector('#case-summary').textContent.includes('Risk')",
+                    timeout=10000,
+                )
+                assert page.locator("#case-flow").inner_text().find("→") > 0
+                assert page.locator("#case-owner").inner_text() == "Unassigned"
+                assert page.locator("#case-history li").count() == 1
+                page.locator("#case-close").click()
+                assert page.locator("#casework").is_hidden()
                 assert any(
                     code == 200 and "status=" not in url and "severity=" not in url
                     for code, url in alert_responses

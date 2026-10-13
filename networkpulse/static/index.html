@@ -68,11 +68,30 @@
         <div class="pagination"><button type="button" id="alerts-prev" disabled>← Previous</button><span id="alerts-page">Page 1</span><button type="button" id="alerts-next">Next →</button></div>
         <p class="table-note">A flagged flow is an investigation candidate, not proof of malicious activity. Use triage outcomes to distinguish false positives.</p>
       </section>
+      <section class="panel case-panel" id="casework" hidden aria-label="Selected alert case">
+        <div class="panel-header"><div><span class="overline">04 // SOC CASEWORK</span><h2>Alert investigation details</h2><p class="section-sub" id="case-summary">Select an alert to inspect.</p></div>
+          <button type="button" id="case-close" class="case-control">Close details</button>
+        </div>
+        <div class="case-grid">
+          <div><span class="case-label">FLOW METADATA</span><p id="case-flow">—</p></div>
+          <div><span class="case-label">ASSIGNED ANALYST</span><p id="case-owner">—</p></div>
+          <div class="case-full"><span class="case-label">ANOMALY SIGNALS (HEURISTIC, NOT CAUSAL)</span><p id="case-reasons">—</p></div>
+        </div>
+        <div class="case-actions">
+          <button type="button" id="case-assign" class="case-control">Assign analyst</button>
+          <button type="button" id="case-add-note" class="case-control">Add analyst note</button>
+        </div>
+        <div class="case-columns">
+          <div><h3>Status audit history</h3><ol id="case-history" class="case-list"></ol></div>
+          <div><h3>Analyst notes & ownership</h3><ol id="case-notes" class="case-list"></ol></div>
+        </div>
+        <p class="table-note">Local demo operations require the X-API-Key per mutation; credentials are never retained by the browser.</p>
+      </section>
       <section class="panel model-panel" id="model"><div class="panel-header"><div><span class="overline">04 // DETECTOR INTEGRITY</span><h2>Model & evaluation provenance</h2></div><span class="small-badge gold">TIME-ORDERED SPLITS</span></div>
         <div class="model-data"><div class="model-detail"><span>TRAINING SOURCE</span><strong id="model-data-source">—</strong></div><div class="model-detail"><span>TRAIN / CALIBRATION / HOLDOUT</span><strong id="model-splits">—</strong></div><div class="model-detail"><span>THRESHOLD QUANTILE</span><strong id="model-quantile">—</strong></div><div class="model-detail"><span>HOLDOUT F1</span><strong id="model-f1">—</strong></div></div>
         <p class="model-warning">Synthetic demo evaluation is not real-world network intrusion detection performance. Baseline shifts, label availability, false positives and external validation need attention before operational use.</p>
       </section>
-      <footer><span>NETWORKPULSE AI <i>•</i> Engineering prototype v0.3.0</span><span>Designed for reproducible analysis, not automated blocking.</span></footer>
+      <footer><span>NETWORKPULSE AI <i>•</i> Engineering prototype v0.5.0</span><span>Designed for reproducible analysis, not automated blocking.</span></footer>
       <div id="toast" class="toast" role="status" aria-live="polite"></div>
     </main>
   </div>

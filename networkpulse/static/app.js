@@ -11,6 +11,7 @@ let latestTrends = [];
 let toastTimer;
 let alertsOffset=0;
 const alertsLimit=25;
+let activeCaseId = null;
 
 async function getJson(url, init = {}) {
   const r = await fetch(url, {cache: 'no-store', ...init});
@@ -79,12 +80,92 @@ function renderAlerts(alerts) {
     <td>${esc(a.src_ip)} <span class="muted">→</span> ${esc(a.dst_ip)}<span class="muted">:${a.dst_port}</span></td>
     <td><strong>${a.risk}</strong></td><td><span class="status">${esc(a.status.replace('_', ' '))}</span></td>
     <td title="${esc(a.reasons.join('; '))}">${esc(a.reasons.join('; '))}</td>
-    <td><button type="button" data-alert="${a.id}">TRIAGE ↗</button></td>
+    <td><button type="button" data-case="${a.id}">DETAILS</button> <button type="button" data-alert="${a.id}">TRIAGE ↗</button></td>
   </tr>`).join('') : '<tr><td colspan="6" class="muted">No alerts match the selected filter.</td></tr>';
   $('alerts-body').querySelectorAll('button[data-alert]').forEach(btn => {
     btn.addEventListener('click', () => triage(Number(btn.dataset.alert)));
   });
+  $('alerts-body').querySelectorAll('button[data-case]').forEach(btn => {
+    btn.addEventListener('click', () => showCase(Number(btn.dataset.case)));
+  });
 }
+
+function renderCaseList(id, entries, asText) {
+  const list = $(id);
+  list.replaceChildren();
+  if (!entries.length) {
+    const item = document.createElement('li');
+    item.textContent = 'No records yet.';
+    list.append(item);
+    return;
+  }
+  for (const entry of entries) {
+    const item = document.createElement('li');
+    // textContent deliberately prevents untrusted note/actor HTML injection.
+    item.textContent = asText(entry);
+    list.append(item);
+  }
+}
+async function showCase(id) {
+  activeCaseId = id;
+  $('casework').hidden = false;
+  $('case-summary').textContent = 'Loading alert #' + id + '…';
+  try {
+    const [detail, history] = await Promise.all([
+      getJson('/api/v1/alerts/' + id + '/detail'),
+      getJson('/api/v1/alerts/' + id + '/history')
+    ]);
+    if (activeCaseId !== id) return;
+    $('case-summary').textContent = 'Alert #' + detail.id + ' · ' +
+      detail.severity.toUpperCase() + ' · ' + detail.status.replace('_', ' ') +
+      ' · Risk ' + detail.risk;
+    const event = detail.event;
+    $('case-flow').textContent = event.src_ip + ':' + event.src_port + ' → ' +
+      event.dst_ip + ':' + event.dst_port + ' · ' + event.proto.toUpperCase() +
+      ' · ' + event.orig_bytes + '/' + event.resp_bytes + ' bytes (sent/received)';
+    $('case-owner').textContent = detail.assigned_to || 'Unassigned';
+    $('case-reasons').textContent = (detail.reasons || []).join('; ') || 'None recorded';
+    renderCaseList('case-history', history, h => h.old_status + ' → ' +
+      h.new_status + ' · ' + h.actor + ' · ' + h.changed_at + ' · ' + h.note);
+    renderCaseList('case-notes', detail.notes || [], n => n.actor + ': ' +
+      n.note + ' · ' + n.created_at);
+  } catch (err) {
+    $('case-summary').textContent = 'Case detail unavailable: ' + err.message;
+  }
+}
+async function caseMutation(suffix, method, payload) {
+  const id = activeCaseId;
+  if (id === null) return;
+  const key = prompt('Operator X-API-Key (not stored by browser)');
+  if (!key) return;
+  try {
+    await getJson('/api/v1/alerts/' + id + '/' + suffix, {
+      method, headers: {'Content-Type': 'application/json', 'X-API-Key': key},
+      body: JSON.stringify(payload)
+    });
+    toast('Case update recorded.');
+    await showCase(id);
+    await refresh();
+  } catch (err) { toast('Case update failed: ' + err.message); }
+}
+$('case-close').addEventListener('click', () => {
+  activeCaseId = null;
+  $('casework').hidden = true;
+});
+$('case-assign').addEventListener('click', async () => {
+  const owner = prompt('Analyst name (empty to unassign)');
+  if (owner === null) return;
+  const name = owner.trim();
+  if (name.length > 150) { toast('Analyst name too long.'); return; }
+  const note = prompt('Reason for assignment (minimum 3 characters)');
+  if (!note || note.trim().length < 3) { toast('Audit reason required.'); return; }
+  await caseMutation('assignment', 'PATCH', {assigned_to: name || null, note: note.trim()});
+});
+$('case-add-note').addEventListener('click', async () => {
+  const note = prompt('Analyst note (minimum 3 characters)');
+  if (!note || note.trim().length < 3) { toast('A note is required.'); return; }
+  await caseMutation('notes', 'POST', {note: note.trim()});
+});
 async function triage(id) {
   const key = prompt('Operator X-API-Key (not stored by browser)');
   if (key === null || !key) return;
@@ -95,7 +176,9 @@ async function triage(id) {
   if (note === null || note.trim().length < 3) { toast('A reason of at least 3 characters is required.'); return; }
   try {
     await getJson(`/api/v1/alerts/${id}`, {method: 'PATCH', headers: {'Content-Type':'application/json', 'X-API-Key': key}, body: JSON.stringify({status: state, note})});
-    toast(`Alert #${id} updated; audit trail recorded.`); await refresh();
+    toast(`Alert #${id} updated; audit trail recorded.`);
+    await refresh();
+    if (activeCaseId === id) await showCase(id);
   } catch (err) { toast('Triage failed: ' + err.message); }
 }
 async function refresh() {

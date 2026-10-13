@@ -7,3 +7,20 @@
 .pagination button{background:#122634;color:#95d5cb;border:1px solid #32616b;padding:8px 14px;border-radius:7px;cursor:pointer}
 .pagination button:disabled{opacity:.35;cursor:not-allowed}
 @media(max-width:960px){.table-panel .panel-header{flex-direction:column}.filter-controls{justify-content:flex-start}}
+
+.case-panel[hidden]{display:none}
+.case-panel{scroll-margin-top:20px}
+.case-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.case-grid>div{border:1px solid #31495d;background:#0e1b2a;padding:15px;border-radius:9px;min-width:0}
+.case-grid .case-full{grid-column:1/-1}
+.case-label{font:10px monospace;letter-spacing:1px;color:var(--mint)}
+.case-grid p{font-size:13px;color:#d6e6f0;overflow-wrap:anywhere;line-height:1.65;margin:10px 0 0}
+.case-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+.case-control{background:#122e35;border:1px solid #3e716e;color:#a4eee0;padding:10px 14px;border-radius:7px;cursor:pointer;font:700 12px monospace}
+.case-control:hover{background:#205049}
+.case-columns{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px}
+.case-columns>div{border:1px solid #31495d;border-radius:9px;padding:16px;min-width:0}
+.case-columns h3{font:600 15px system-ui,sans-serif;margin:0 0 12px}
+.case-list{padding-left:20px;color:#b4cbd8;font-size:12px;line-height:1.7;overflow-wrap:anywhere}
+.case-list li{margin-bottom:9px}
+@media(max-width:750px){.case-grid,.case-columns{grid-template-columns:1fr}.case-grid .case-full{grid-column:1}}
