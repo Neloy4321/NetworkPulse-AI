@@ -100,11 +100,22 @@ async function triage(id) {
 }
 async function refresh() {
   try {
+    // Omit optional filters that are unset. Sending status= or severity=
+    // causes FastAPI query validation to reject the whole dashboard request.
+    const alertParams = new URLSearchParams({
+      limit: String(alertsLimit), offset: String(alertsOffset), order: $('order-filter').value
+    });
+    const optionalFilters = {
+      status: $('status-filter').value,
+      severity: $('severity-filter').value,
+      src_ip: $('alert-ip-filter').value.trim()
+    };
+    for (const [name, value] of Object.entries(optionalFilters)) {
+      if (value) alertParams.set(name, value);
+    }
     const [summary, alerts, trends, model] = await Promise.all([
       getJson('/api/v1/summary'),
-      getJson('/api/v1/alerts?' + new URLSearchParams({limit:String(alertsLimit), offset:String(alertsOffset),
-        status:$('status-filter').value, severity:$('severity-filter').value,
-        src_ip:$('alert-ip-filter').value.trim(), order:$('order-filter').value}).toString()),
+      getJson('/api/v1/alerts?' + alertParams.toString()),
       getJson('/api/v1/trends'), getJson('/api/v1/model'),
     ]);
     $('metric-flows').textContent = fmt(summary.flows);
