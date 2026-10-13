@@ -17,3 +17,10 @@ data/
 *.db
 *.sqlite
 *.sqlite3
+
+# Never commit downloaded real network traces or CI dataset manifests.
+data/external/
+archive-audit-reports/
+*.pcap
+*.pcapng
+*.zip

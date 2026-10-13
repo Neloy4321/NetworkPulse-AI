@@ -1,40 +1,38 @@
-name: Inspect external datasets (metadata only)
+name: Inspect external datasets (manual, metadata only)
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'tools/audit_external_dataset_zip.py'
-      - '.github/workflows/external-dataset-inventory.yml'
   workflow_dispatch:
+    inputs:
+      file_id:
+        description: "Public, authorized Google Drive ZIP file ID"
+        required: true
+        type: string
+      expected_bytes:
+        description: "Expected exact ZIP size in bytes"
+        required: true
+        type: string
+      label:
+        description: "Non-sensitive report label (letters and hyphens)"
+        required: true
+        default: manual-archive
+        type: string
 permissions:
   contents: read
 jobs:
   archive-inventory:
-    name: Check ${{ matrix.label }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - label: archive-one
-            file_id: 1rkNwQzrkpcnmtM8G5a-O7dAtr-y_9wFy
-            bytes: 3372478580
-          - label: archive-two
-            file_id: 16eIgENKYpiLwJNHZWRrYdPfGj6AOOtkT
-            bytes: 586382286
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install public Drive ZIP downloader
+      - name: Install Google Drive downloader
         run: python -m pip install 'gdown>=5.2,<6'
       - name: Inspect ZIP metadata without extracting raw files
         env:
-          GOOGLE_DRIVE_ARCHIVE_ID: ${{ matrix.file_id }}
-          EXPECTED_ARCHIVE_BYTES: ${{ matrix.bytes }}
-          ARCHIVE_LABEL: ${{ matrix.label }}
+          GOOGLE_DRIVE_ARCHIVE_ID: ${{ inputs.file_id }}
+          EXPECTED_ARCHIVE_BYTES: ${{ inputs.expected_bytes }}
+          ARCHIVE_LABEL: ${{ inputs.label }}
         run: |
           python tools/audit_external_dataset_zip.py \
             --id "$GOOGLE_DRIVE_ARCHIVE_ID" \
@@ -45,7 +43,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: dataset-manifest-${{ matrix.label }}
+          name: dataset-manifest
           path: archive-audit-reports/*.json
           retention-days: 3
           if-no-files-found: warn
