@@ -41,3 +41,27 @@ Collector can run on a host with authorized access to Zeek/Suricata logs. Log fi
 - **Database integrity:** ACK only after transaction commit; alert and flow are transactional.
 - **DLQ:** contains log metadata and must have restricted access and retention settings.
 - **No end-to-end SLA claimed:** persistent volumes, alerting, failover, network drop measurements, graceful fleet shutdown and worker throughput remain to be independently verified.
+
+
+## Worker healthcheck (Docker Compose)
+
+The API and worker share a built Docker image, but the API image's default
+healthcheck uses HTTP `/health/ready` on port 8000. The background worker
+does **not** run an HTTP server, so that inherited check incorrectly marks
+an otherwise-running worker `unhealthy`.
+
+The Compose `worker` service overrides the inherited check with a bounded
+Redis `PING` using the worker's own `REDIS_URL`. This verifies Redis
+connectivity and the container remains running, **not** that messages were
+processed successfully. Idle workers may legitimately produce no logs.
+
+Run in the project directory:
+
+```powershell
+docker compose --profile streaming up -d --no-deps --force-recreate worker
+docker compose --profile streaming ps
+```
+
+To verify end-to-end processing, enqueue a new unique flow and inspect
+database insertion and consumer acknowledgement separately; an `Up
+(healthy)` status alone is insufficient.
