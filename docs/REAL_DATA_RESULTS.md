@@ -100,3 +100,37 @@ implemented and passed. Requirement #1 is **materially progressed but not
 
 Raw traffic never gets committed; reports contain aggregates and source
 file names only, without individual packet payloads, IPs or identities.
+
+## Native NetworkPulse Detector evaluation — real UNSW capture
+
+**Tested actual `networkpulse.detector.train`, `Detector.score` and
+`networkpulse.features.event_features`, not just separate scikit-learn baselines.**
+Original headerless raw UNSW-NB15 flow records were validated into the canonical
+`FlowEvent` schema. Source `UNSW-NB15_1.csv` is earlier than held-out
+`UNSW-NB15_4.csv`. Real-trained and synthetic-trained in-memory models were
+evaluated on the **same 1,288 exact-event-deduplicated real flows (257 attacks)**.
+
+| Native Detector variant | Precision | Recall | F1 | Benign false-positive rate |
+|---|---:|---:|---:|---:|
+| Real early-capture training + benign calibration | 63.38% | 87.55% | **73.53%** | **12.61%** |
+| Existing synthetic-demo *training regime* (fresh model) | 25.37% | 92.61% | **39.83%** | **67.90%** |
+
+The synthetic reference is **newly fitted using the same seeded generator**,
+not a checksum-matched copy of any model currently running on the user's PC.
+Neither experimental model was deployed or promoted. Both are the **native
+NetworkPulse scoring architecture**, not the prior scaled/engineered
+dataset-specific baseline. The 12.61% real-trained benign alert rate would
+still be potentially unacceptable for a production SOC. There is no verified
+independent-site holdout, so do **not** infer field accuracy from these numbers.
+
+The detailed provenance, run counts, thresholds, confusion matrices, ROC/PR-AUC
+and explicit constraints are in
+[`reports/real_data/native_unsw_detector.json`](../reports/real_data/native_unsw_detector.json).
+CI evidence: https://github.com/Neloy4321/NetworkPulse-AI/actions/runs/38462247199
+
+**Requirement #1:** Real dataset acquisition, robust adapters, source-line
+counting, source hashing, explicit cross-capture benchmarking, multi-model
+comparison, a verified native pipeline score and CI are complete as
+**engineering milestones**. An external independent network/site,
+real deployed sensor model check and acceptable alert budget remain missing.
+Therefore #1 is **not honestly 100% complete**.

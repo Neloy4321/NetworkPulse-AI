@@ -1,0 +1,87 @@
+{
+  "evaluation": "NetworkPulse native Detector + feature pipeline",
+  "data_partition": {
+    "train_timestamp_min": "2015-01-22T11:50:43+00:00",
+    "train_timestamp_max": "2015-01-22T19:43:13+00:00",
+    "test_timestamp_min": "2015-02-18T09:00:37+00:00",
+    "test_later_than_train": true,
+    "site_independence_verified": false
+  },
+  "sample_counts": {
+    "train_unique_events": 2197,
+    "test_unique_events": 1288,
+    "test_attacks": 257,
+    "exact_duplicates_removed_train": 3,
+    "exact_duplicates_removed_test": 12
+  },
+  "model_results": {
+    "real_capture_native": {
+      "precision": 0.6338,
+      "recall": 0.87549,
+      "f1": 0.73529,
+      "false_positive_rate": 0.12609,
+      "alerts": 355,
+      "confusion_matrix": {
+        "tn": 901,
+        "fp": 130,
+        "fn": 32,
+        "tp": 225
+      },
+      "roc_auc": 0.95076,
+      "pr_auc": 0.82859
+    },
+    "synthetic_reference_native": {
+      "precision": 0.25373,
+      "recall": 0.92607,
+      "f1": 0.39833,
+      "false_positive_rate": 0.67895,
+      "alerts": 938,
+      "confusion_matrix": {
+        "tn": 331,
+        "fp": 700,
+        "fn": 19,
+        "tp": 238
+      },
+      "roc_auc": 0.86501,
+      "pr_auc": 0.81408
+    }
+  },
+  "source": "Original raw UNSW-NB15 49-column, headerless, source archive from user's Drive",
+  "source_archive_sha256": "3c7500f120405b21b44a2bf05134f49491f88a655ae3091fc1b269c4c9ece79a",
+  "seed": 42,
+  "sample_caps": {
+    "train": 2200,
+    "test": 1300
+  },
+  "raw_train_full_scan": {
+    "valid_rows": 699934,
+    "invalid_rows": 67,
+    "label_counts": {
+      "benign": 677719,
+      "anomaly": 22215
+    }
+  },
+  "raw_test_full_scan": {
+    "valid_rows": 439969,
+    "invalid_rows": 75,
+    "label_counts": {
+      "benign": 351075,
+      "anomaly": 88894
+    }
+  },
+  "native_model_evidence": {
+    "real_capture_training": {
+      "feature_count": 20,
+      "train_count": 1252,
+      "calibration_count": 329,
+      "threshold": 0.1330517881950365
+    },
+    "synthetic_reference": {
+      "feature_count": 15,
+      "threshold": 0.09934963658328821
+    }
+  },
+  "data_protection": "No raw IP address/flow rows or artifacts committed; only aggregated validation.",
+  "caveat": "This run trains two reproducible in-memory Detector instances. It does not score an existing production model.joblib nor promote/deploy one.",
+  "evidence_run": "https://github.com/Neloy4321/NetworkPulse-AI/actions/runs/38462247199"
+}

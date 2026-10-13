@@ -95,7 +95,13 @@ References: [Model lifecycle](docs/MODEL_LIFECYCLE.md) · [Retention](docs/RETEN
 
 All three user-supplied archives (CIC-IDS2017, UNSW-NB15 raw and TON-IoT-compatible)
 were evaluated in [GitHub Actions](https://github.com/Neloy4321/NetworkPulse-AI/actions/runs/38461006624).
-See [full real-data results](docs/REAL_DATA_RESULTS.md). The published figures are
+See [full real-data results](docs/REAL_DATA_RESULTS.md).
+**Real native-model evaluation:** Our actual
+[NetworkPulse Detector architecture](docs/REAL_DATA_RESULTS.md#native-networkpulse-detector-evaluation--real-unsw-capture)
+has now also been tested on an independent later UNSW-NB15 capture, not
+just with synthetic seeded flows. False positives remain a significant
+limitation; this is not a deployed production model validation.
+ The published figures are
 **offline, separate-capture baseline measurements**, not accuracy of the deployed
 Zeek/Suricata model. Source-data files remain outside Git.
 

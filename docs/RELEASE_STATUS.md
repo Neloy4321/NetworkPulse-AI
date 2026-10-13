@@ -74,3 +74,13 @@ Machine-readable aggregates are committed under `reports/real_data/`. This
 closes the previous **no real dataset run** blocker, but **not** the independent
 network/site holdout or deployed real-sensor verification gates. As a result,
 requirement #1 cannot be called 100% production/research validated yet.
+
+
+## Native model external-capture check
+
+GitHub Actions evaluated the existing `Detector.train` and
+`Detector.score` functions with real raw UNSW-NB15 flows and compared a
+real-source-trained model to the deterministic synthetic training regime.
+See [native score evidence](REAL_DATA_RESULTS.md#native-networkpulse-detector-evaluation--real-unsw-capture).
+This does **not** complete production field-validation requirements, and
+the high benign FPR prevents an operational readiness claim.
