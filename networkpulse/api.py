@@ -6,6 +6,7 @@ import secrets
 import csv
 import io
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -229,6 +230,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             counts(session)
         # Public readiness probes must not expose local training paths or provenance.
         return {"status": "ready"}
+
+    @app.get("/api/v1/intelligence/behavior", tags=["analytics"],
+             dependencies=[Depends(read_scope)])
+    def behavior_windows(
+        window_minutes: Literal[1, 5] = 5,
+        lookback_minutes: int = Query(60, ge=1, le=1440),
+        until: datetime | None = None,
+        src_ip: str | None = Query(default=None, max_length=45),
+        limit: int = Query(30, ge=1, le=100),
+        offset: int = Query(0, ge=0, le=10000),
+        min_distinct_ports: int = Query(12, ge=2, le=65536),
+        min_distinct_destinations: int = Query(8, ge=2, le=10000),
+        burst_flows_per_minute: int = Query(120, ge=10, le=100000),
+        db: Session = Depends(get_db),
+    ):
+        """Actual persisted flow aggregation, not a separate benchmark-only path."""
+        import ipaddress
+        from networkpulse.behavior import activity_windows
+        if until is not None and (until.tzinfo is None or until.utcoffset() is None):
+            raise HTTPException(422, detail="until must be timezone-aware")
+        if src_ip:
+            try:
+                src_ip = str(ipaddress.ip_address(src_ip))
+            except ValueError as exc:
+                raise HTTPException(422, detail="Invalid source IP address") from exc
+        return activity_windows(
+            db, window_minutes=window_minutes, lookback_minutes=lookback_minutes,
+            until=until, src_ip=src_ip, limit=limit, offset=offset,
+            min_distinct_ports=min_distinct_ports,
+            min_distinct_destinations=min_distinct_destinations,
+            burst_flows_per_minute=burst_flows_per_minute,
+        )
 
     @app.get("/api/v1/intelligence/hosts", tags=["analytics"], dependencies=[Depends(read_scope)])
     def intelligence_hosts(

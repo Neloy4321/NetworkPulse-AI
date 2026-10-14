@@ -212,6 +212,50 @@ async function triage(id) {
     if (activeCaseId === id) await showCase(id);
   } catch (err) { toast('Triage failed: ' + err.message); }
 }
+let lastBehaviorFetch = 0;
+async function refreshBehavior(force = false) {
+  if (!force && Date.now() - lastBehaviorFetch < 30000) return;
+  lastBehaviorFetch = Date.now();
+  const body = $('behavior-body');
+  try {
+    const params = new URLSearchParams({
+      window_minutes: $('behavior-window-size').value,
+      lookback_minutes: '60', limit: '30'
+    });
+    const report = await getJson('/api/v1/intelligence/behavior?' + params.toString());
+    body.replaceChildren();
+    if (!report.windows.length) {
+      const tr = document.createElement('tr');
+      const td = document.createElement('td');
+      td.colSpan = 6; td.textContent = 'No ingested flows in the last 60 minutes.';
+      tr.append(td); body.append(tr);
+    }
+    for (const item of report.windows) {
+      const tr = document.createElement('tr');
+      const values = [
+        item.window_start_utc.slice(0, 16).replace('T', ' '),
+        item.source_ip, fmt(item.flow_count),
+        item.distinct_destination_ports + ' / ' + item.distinct_destination_hosts,
+        fmt(item.flagged_flows),
+        item.patterns.length ? item.patterns.join(', ') : 'No configured cue'
+      ];
+      for (const value of values) {
+        const td = document.createElement('td');
+        td.textContent = value;  // Untrusted IP/text never becomes HTML.
+        tr.append(td);
+      }
+      body.append(tr);
+    }
+    $('behavior-status').textContent =
+      'UTC · latest 60 minutes · ' + report.windows.length +
+      ' windows shown' + (report.has_more ? ' (additional via API)' : '') +
+      ' · heuristic cues do not confirm attacks.';
+  } catch (err) {
+    $('behavior-status').textContent = 'Behavior analytics unavailable: ' + err.message;
+  }
+}
+$('behavior-window-size').addEventListener('change', () => refreshBehavior(true));
+
 async function refresh() {
   try {
     // Omit optional filters that are unset. Sending status= or severity=
@@ -246,6 +290,7 @@ async function refresh() {
     $('model-f1').textContent = model.metrics?.f1 == null ? 'N/A' : model.metrics.f1.toFixed(3);
     protocolChart(summary.protocols, summary.flows);
     latestTrends = trends; drawTimeline(trends); renderAlerts(alerts);
+    await refreshBehavior();
     $('alerts-page').textContent = `Page ${Math.floor(alertsOffset / alertsLimit)+1}`;
     $('alerts-prev').disabled = alertsOffset === 0;
     $('alerts-next').disabled = alerts.length < alertsLimit;

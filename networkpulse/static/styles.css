@@ -24,3 +24,7 @@
 .case-list{padding-left:20px;color:#b4cbd8;font-size:12px;line-height:1.7;overflow-wrap:anywhere}
 .case-list li{margin-bottom:9px}
 @media(max-width:750px){.case-grid,.case-columns{grid-template-columns:1fr}.case-grid .case-full{grid-column:1}}
+
+#behavior{scroll-margin-top:18px}
+#behavior .filter-label select{background:#112337;border:1px solid #39546b;border-radius:7px;padding:9px;color:#d9eaf5}
+#behavior table{min-width:780px}
