@@ -71,6 +71,19 @@
           <tbody id="behavior-body"><tr><td colspan="6">Loading behavior analytics…</td></tr></tbody></table></div>
         <p class="table-note" id="behavior-status">Latest 60 minutes; updates every 30 seconds.</p>
       </section>
+      <section class="panel table-panel" id="behavior-findings" aria-label="Durable behavioral investigations">
+        <div class="panel-header"><div>
+          <span class="overline">04 // PERSISTENT BEHAVIOR CASES</span>
+          <h2>Correlated behavior findings</h2>
+          <p class="section-sub">Committed investigation cases generated from completed UTC traffic windows.</p>
+        </div></div>
+        <div class="table-scroll"><table>
+          <thead><tr><th>WINDOW UTC</th><th>SOURCE</th><th>SEVERITY</th>
+          <th>SIGNALS</th><th>STATUS</th><th>ANALYST</th><th>ACTION</th></tr></thead>
+          <tbody id="finding-body"><tr><td colspan="7">Loading persistent investigations…</td></tr></tbody>
+        </table></div>
+        <p class="table-note" id="finding-status">No automated blocking. Cases require human review; status and ownership are audited.</p>
+      </section>
       <section class="panel table-panel" id="investigations"><div class="panel-header"><div><span class="overline">03 // ALERT OPERATIONS</span><h2>Investigation queue</h2><p class="section-sub">Alert state changes are recorded in an audit log.</p></div><div class="filter-controls">
 <label class="filter-label" for="status-filter">Status <select id="status-filter"><option value="">All statuses</option><option value="open">Open</option><option value="investigating">Investigating</option><option value="resolved">Resolved</option><option value="false_positive">False positive</option></select></label>
 <label class="filter-label" for="severity-filter">Severity <select id="severity-filter"><option value="">All</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label>

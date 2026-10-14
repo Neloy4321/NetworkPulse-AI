@@ -55,6 +55,23 @@ services:
     volumes:
       - model_data:/app/data
     networks: [internal]
+  behavior-worker:
+    build: .
+    profiles: ["streaming"]
+    command: ["networkpulse", "behavior-worker", "--interval", "60",
+              "--lookback", "30", "--lateness", "2"]
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://networkpulse:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/networkpulse
+      NETWORKPULSE_API_KEY: ${NETWORKPULSE_API_KEY:?Set NETWORKPULSE_API_KEY in .env}
+    networks: [internal]
   api:
     build: .
     restart: unless-stopped

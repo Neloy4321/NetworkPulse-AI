@@ -23,9 +23,14 @@ from networkpulse.security.csv_safety import safe_spreadsheet_cell
 from networkpulse.observability import metric_middleware, exporter, INGEST_TOTAL, ALERT_ACTIONS, MODEL_INFERENCE
 import time
 from networkpulse.detector import Detector
-from networkpulse.schemas import AlertPatch, AlertAssignment, AnalystNote, FlowBatch
+from networkpulse.schemas import (
+    AlertPatch, AlertAssignment, AnalystNote, BehaviorFindingPatch, FlowBatch,
+)
 from networkpulse.service import change_alert, ingest
-from networkpulse.storage import Alert, AlertAudit, AlertNote, NetworkEvent, build_sessions, counts
+from networkpulse.storage import (
+    Alert, AlertAudit, AlertNote, BehaviorFinding, BehaviorFindingAudit,
+    NetworkEvent, build_sessions, counts,
+)
 
 STATIC = Path(__file__).parent / "static"
 
@@ -264,6 +269,97 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             min_distinct_destinations=min_distinct_destinations,
             burst_flows_per_minute=burst_flows_per_minute,
         )
+
+    def behavior_case_dict(record: BehaviorFinding) -> dict:
+        return {
+            "id": record.id, "source_ip": record.source_ip,
+            "window_start_utc": record.window_start,
+            "window_minutes": record.window_minutes,
+            "patterns": record.patterns, "flow_count": record.flow_count,
+            "distinct_destination_ports": record.destination_ports,
+            "distinct_destination_hosts": record.destination_hosts,
+            "flagged_flows": record.flagged_flows,
+            "severity": record.severity, "status": record.status,
+            "assigned_to": record.assigned_to,
+            "created_at": record.created_at, "updated_at": record.updated_at,
+            "evidence_type": "correlated_flow_metadata_heuristic_only",
+        }
+
+    @app.get("/api/v1/intelligence/findings", tags=["analytics"],
+             dependencies=[Depends(read_scope)])
+    def list_behavior_findings(
+        limit: int = Query(30, ge=1, le=100),
+        offset: int = Query(0, ge=0, le=10000),
+        status: Literal["open", "investigating", "resolved", "false_positive"] | None = None,
+        source_ip: str | None = Query(default=None, max_length=45),
+        db: Session = Depends(get_db),
+    ):
+        import ipaddress
+        query = select(BehaviorFinding)
+        if status:
+            query = query.where(BehaviorFinding.status == status)
+        if source_ip:
+            try:
+                normalized = str(ipaddress.ip_address(source_ip))
+            except ValueError as exc:
+                raise HTTPException(422, detail="Invalid source address") from exc
+            query = query.where(BehaviorFinding.source_ip == normalized)
+        records = db.scalars(query.order_by(
+            BehaviorFinding.window_start.desc(), BehaviorFinding.id.asc(),
+        ).offset(offset).limit(limit + 1)).all()
+        return {
+            "findings": [behavior_case_dict(f) for f in records[:limit]],
+            "has_more": len(records) > limit,
+            "disclaimer": "Heuristic correlation; a finding is not a confirmed intrusion.",
+        }
+
+    @app.get("/api/v1/intelligence/findings/{finding_id}/history",
+             tags=["analytics"], dependencies=[Depends(read_scope)])
+    def behavior_finding_history(finding_id: str, db: Session = Depends(get_db)):
+        if db.get(BehaviorFinding, finding_id) is None:
+            raise HTTPException(404, detail="Behavior finding not found")
+        rows = db.scalars(select(BehaviorFindingAudit).where(
+            BehaviorFindingAudit.finding_id == finding_id,
+        ).order_by(BehaviorFindingAudit.changed_at.desc(),
+                   BehaviorFindingAudit.id.desc()).limit(100)).all()
+        return [{
+            "actor": row.actor, "old_status": row.old_status,
+            "new_status": row.new_status, "old_assignee": row.old_assignee,
+            "new_assignee": row.new_assignee, "note": row.note,
+            "changed_at": row.changed_at,
+        } for row in rows]
+
+    @app.patch("/api/v1/intelligence/findings/{finding_id}",
+               tags=["analytics"], dependencies=[Depends(require_api_key)])
+    def update_behavior_finding(
+        finding_id: str, payload: BehaviorFindingPatch,
+        principal: Principal = Depends(analyst_scope),
+        db: Session = Depends(get_db),
+    ):
+        if not ({"status", "assigned_to"} & payload.model_fields_set):
+            raise HTTPException(422, detail="Specify a status or assignment")
+        if "status" in payload.model_fields_set and payload.status is None:
+            raise HTTPException(422, detail="Status cannot be null")
+        record = db.scalar(select(BehaviorFinding).where(
+            BehaviorFinding.id == finding_id,
+        ).with_for_update())
+        if record is None:
+            raise HTTPException(404, detail="Behavior finding not found")
+        old_status, old_assignee = record.status, record.assigned_to
+        if "status" in payload.model_fields_set:
+            record.status = payload.status
+        if "assigned_to" in payload.model_fields_set:
+            record.assigned_to = payload.assigned_to
+        from networkpulse.storage import now_utc
+        record.updated_at = now_utc()
+        db.add(BehaviorFindingAudit(
+            finding_id=record.id, actor=principal.subject[:150],
+            old_status=old_status, new_status=record.status,
+            old_assignee=old_assignee, new_assignee=record.assigned_to,
+            note=payload.note,
+        ))
+        db.commit()
+        return behavior_case_dict(record)
 
     @app.get("/api/v1/intelligence/hosts", tags=["analytics"], dependencies=[Depends(read_scope)])
     def intelligence_hosts(

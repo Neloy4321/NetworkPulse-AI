@@ -92,6 +92,18 @@ def main(argv: list[str] | None = None) -> int:
     collect.add_argument("--checkpoint", type=Path, default=Path("data/collector-offset.json"))
     collect.add_argument("--once", action="store_true")
 
+    behavior_worker = cmd.add_parser(
+        "behavior-worker", help="Materialize durable cases from finalized ingested UTC windows"
+    )
+    behavior_worker.add_argument("--once", action="store_true")
+    behavior_worker.add_argument("--interval", type=int, default=60)
+    behavior_worker.add_argument("--lookback", type=int, default=30)
+    behavior_worker.add_argument("--lateness", type=int, default=2)
+    behavior_worker.add_argument("--min-ports", type=int, default=12)
+    behavior_worker.add_argument("--min-destinations", type=int, default=8)
+    behavior_worker.add_argument("--burst-per-minute", type=int, default=120)
+    behavior_worker.add_argument("--until", help="Timezone-aware ISO 8601 backfill end")
+
     worker = cmd.add_parser("worker", help="Consume Redis Streams and commit scored flows")
     worker.add_argument("--consumer", default="networkpulse-worker-1")
     worker.add_argument("--once", action="store_true")
@@ -171,6 +183,33 @@ def main(argv: list[str] | None = None) -> int:
         finally:
             maker.kw["bind"].dispose()
         print(json.dumps(result, indent=2))
+        return 0
+
+    if args.command == "behavior-worker":
+        from datetime import datetime
+        from networkpulse.behavior_cases import materialize_findings
+        if not 5 <= args.interval <= 3600:
+            parser.error("behavior-worker interval must be 5..3600 seconds")
+        settings = Settings.from_env()
+        maker = build_sessions(settings.database_url)
+        try:
+            until = datetime.fromisoformat(args.until.replace("Z", "+00:00")) if args.until else None
+            if until and not args.once:
+                parser.error("--until requires --once (backfill cannot run as a daemon)")
+            while True:
+                with maker() as session:
+                    outcome = materialize_findings(
+                        session, until=until, lookback_minutes=args.lookback,
+                        lateness_minutes=args.lateness, min_ports=args.min_ports,
+                        min_destinations=args.min_destinations,
+                        burst_per_minute=args.burst_per_minute,
+                    )
+                print(json.dumps(outcome), flush=True)
+                if args.once:
+                    break
+                time.sleep(args.interval)
+        finally:
+            maker.kw["bind"].dispose()
         return 0
 
     if args.command in {"collect", "worker"}:

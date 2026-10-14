@@ -60,6 +60,14 @@ class AlertPatch(BaseModel):
     note: str = Field(min_length=3, max_length=1500)
 
 
+class BehaviorFindingPatch(BaseModel):
+    """Human review only; collection workers never change case state."""
+
+    status: Literal["open", "investigating", "resolved", "false_positive"] | None = None
+    assigned_to: str | None = Field(default=None, min_length=1, max_length=150)
+    note: str = Field(min_length=3, max_length=1500)
+
+
 class AlertAssignment(BaseModel):
     assigned_to: str | None = Field(default=None, min_length=1, max_length=150)
     note: str = Field(min_length=3, max_length=1500)

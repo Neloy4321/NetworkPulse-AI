@@ -11,6 +11,7 @@ import json
 import tempfile
 import time
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -56,7 +57,9 @@ def replay(archive: Path) -> dict:
         raise ValueError("Held-out capture lacks benign/attack labels")
     # The API receives only original later-capture events; it never trains
     # or calibrates on them. Smaller replay keeps CI API state bounded.
-    replay_events = candidate_events[:50]
+    # Larger unmodified held-out sample makes real source/window correlations
+    # observable without constructing synthetic scans or inventing events.
+    replay_events = candidate_events[:800]
     model = train(training, seed=42, source="unsw_raw_real_capture_security_replay")
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     public_key = private_key.public_key()
@@ -92,7 +95,8 @@ def replay(archive: Path) -> dict:
         )
         with patch("jwt.PyJWKClient", return_value=fake_jwks):
             with TestClient(create_app(settings)) as api:
-                payload = {"events": [e.model_dump(mode="json") for e in replay_events]}
+                all_payloads = [e.model_dump(mode="json") for e in replay_events]
+                payload = {"events": all_payloads[:200]}
                 assert api.get("/api/v1/summary").status_code == 401
                 assert api.get("/api/v1/summary",
                                headers=authorization("viewer", aud="wrong")).status_code == 401
@@ -105,13 +109,25 @@ def replay(archive: Path) -> dict:
                                     headers=authorization("analyst"))
                 assert response.status_code == 200, "Authorized real flow replay failed"
                 first = response.json()
-                assert first["received"] == len(replay_events)
-                assert first["inserted"] == len(replay_events)
+                assert first["received"] == first["inserted"] == len(payload["events"])
+                received, inserted, alerts_created = (
+                    first["received"], first["inserted"], first["alerts_created"]
+                )
+                for offset in range(200, len(all_payloads), 200):
+                    chunk = {"events": all_payloads[offset:offset + 200]}
+                    part = api.post("/api/v1/ingest", json=chunk,
+                                    headers=authorization("analyst"))
+                    assert part.status_code == 200, "Real flow replay segment failed"
+                    receipt = part.json()
+                    received += receipt["received"]
+                    inserted += receipt["inserted"]
+                    alerts_created += receipt["alerts_created"]
+                assert received == inserted == len(replay_events)
                 repeated = api.post("/api/v1/ingest", json=payload,
                                     headers=authorization("analyst"))
                 assert repeated.status_code == 200
                 assert repeated.json()["inserted"] == 0
-                assert repeated.json()["duplicates"] == len(replay_events)
+                assert repeated.json()["duplicates"] == len(payload["events"])
                 visible = api.get("/api/v1/summary", headers=authorization("viewer"))
                 assert visible.status_code == 200
                 assert visible.json()["flows"] == len(replay_events)
@@ -128,14 +144,82 @@ def replay(archive: Path) -> dict:
                 )
                 assert behavior_response.status_code == 200
                 behavior = behavior_response.json()
-                assert not behavior["has_more"]
-                assert sum(w["flow_count"] for w in behavior["windows"]) == len(replay_events)
-                assert all(w["distinct_destination_ports"] > 0 for w in behavior["windows"])
-                assert all(w["distinct_destination_hosts"] > 0 for w in behavior["windows"])
+                all_windows = list(behavior["windows"])
+                page_offset = len(all_windows)
+                while behavior["has_more"]:
+                    next_page = api.get(
+                        "/api/v1/intelligence/behavior",
+                        params={"window_minutes": 5, "lookback_minutes": 1440,
+                                "until": end_time.isoformat(), "limit": 100,
+                                "offset": page_offset},
+                        headers=authorization("viewer"),
+                    )
+                    assert next_page.status_code == 200
+                    behavior = next_page.json()
+                    assert behavior["windows"], "Behavior pagination failed to advance"
+                    all_windows.extend(behavior["windows"])
+                    page_offset += len(behavior["windows"])
+                assert sum(w["flow_count"] for w in all_windows) == len(replay_events)
+                assert all(w["distinct_destination_ports"] > 0 for w in all_windows)
+                assert all(w["distinct_destination_hosts"] > 0 for w in all_windows)
                 assert api.get("/api/v1/intelligence/behavior").status_code == 401
                 assert api.get("/api/v1/intelligence/behavior",
                                params={"window_minutes": 2},
                                headers=authorization("viewer")).status_code == 422
+
+                from networkpulse.behavior_cases import materialize_findings
+                from networkpulse.storage import build_sessions, BehaviorFinding
+                last_boundary = datetime.fromtimestamp(
+                    ((int(end_time.timestamp()) // 300) + 1) * 300,
+                    tz=timezone.utc,
+                )
+                maker = build_sessions(database)
+                try:
+                    with maker() as session:
+                        candidate_report = materialize_findings(
+                            session, until=last_boundary, lateness_minutes=0,
+                            lookback_minutes=1440, min_ports=2,
+                            min_destinations=2, burst_per_minute=10,
+                        )
+                        assert session.query(BehaviorFinding).count() == (
+                            candidate_report["candidate_upserts"]
+                        )
+                    case_list = api.get(
+                        "/api/v1/intelligence/findings", params={"limit": 100},
+                        headers=authorization("viewer"),
+                    )
+                    assert case_list.status_code == 200
+                    cases = case_list.json()["findings"]
+                    assert len(cases) == min(100, candidate_report["candidate_upserts"])
+                    assert api.get("/api/v1/intelligence/findings").status_code == 401
+                    if cases:
+                        target = cases[0]["id"]
+                        patch_url = "/api/v1/intelligence/findings/" + target
+                        denied = api.patch(
+                            patch_url, json={"status": "resolved",
+                                             "note": "Reviewed flow-window evidence"},
+                            headers=authorization("viewer"),
+                        )
+                        assert denied.status_code == 403
+                        reviewed = api.patch(
+                            patch_url, json={"status": "resolved",
+                                             "note": "Authorized analyst review of real flow"},
+                            headers=authorization("analyst"),
+                        )
+                        assert reviewed.status_code == 200
+                        with maker() as session:
+                            materialize_findings(
+                                session, until=last_boundary, lateness_minutes=0,
+                                lookback_minutes=1440, min_ports=2,
+                                min_destinations=2, burst_per_minute=10,
+                            )
+                            assert session.get(BehaviorFinding, target).status == "resolved"
+                        evidence = api.get(patch_url + "/history",
+                                           headers=authorization("viewer"))
+                        assert evidence.status_code == 200
+                        assert evidence.json()[0]["new_status"] == "resolved"
+                finally:
+                    maker.kw["bind"].dispose()
 
     # Privacy contract: aggregate only. Never put IPs/rows/tokens in output.
     return {
@@ -146,10 +230,11 @@ def replay(archive: Path) -> dict:
         "train_unique_rows": len(training),
         "heldout_unique_rows": len(candidate_events),
         "replayed_real_flows": len(replay_events),
-        "inserted_real_flows": first["inserted"],
+        "inserted_real_flows": inserted,
+        "durable_behavior_cases": candidate_report["candidate_upserts"],
         "operational_behavior_windows": len(behavior["windows"]),
         "repeat_duplicates": repeated.json()["duplicates"],
-        "alerts_created": first["alerts_created"],
+        "alerts_created": alerts_created,
         "validation": {
             "real_capture_chronological_separation": True,
             "rs256_signature_issuer_audience_verified": True,
@@ -163,6 +248,8 @@ def replay(archive: Path) -> dict:
             "replay_idempotent": True,
             "operational_behavior_api_real_flows": True,
             "real_behavior_counts_match_ingest": True,
+            "durable_behavior_upsert_real_capture": True,
+            "behavior_case_audit_preserved_after_reprocess": bool(cases),
         },
         "limitations": [
             "OIDC/JWKS issuer was replaced with locally generated test keys, not real IdP",

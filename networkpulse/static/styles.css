@@ -28,3 +28,7 @@
 #behavior{scroll-margin-top:18px}
 #behavior .filter-label select{background:#112337;border:1px solid #39546b;border-radius:7px;padding:9px;color:#d9eaf5}
 #behavior table{min-width:780px}
+
+#behavior-findings{scroll-margin-top:18px}
+#behavior-findings table{min-width:850px}
+#behavior-findings td:nth-child(4){max-width:270px}
