@@ -10,7 +10,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
 
-LATEST = "0004_behavior_findings"
+LATEST = "0005_mlops_drift_runs"
 BASELINE = "0001_legacy_baseline"
 ROOT = Path(__file__).resolve().parent.parent
 

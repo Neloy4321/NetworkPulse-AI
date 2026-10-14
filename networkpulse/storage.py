@@ -112,6 +112,24 @@ class BehaviorFindingAudit(Base):
     finding: Mapped[BehaviorFinding] = relationship(back_populates="history")
 
 
+class MLOpsDriftRun(Base):
+    """Immutable, input-fingerprinted report for a pinned deployed model."""
+
+    __tablename__ = "mlops_drift_runs"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    model_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    input_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    flow_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    flagged_flows: Mapped[int] = mapped_column(Integer, nullable=False)
+    drift_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    alert_budget_exceeded: Mapped[bool] = mapped_column(nullable=False)
+    worst_psi: Mapped[float] = mapped_column(Float, nullable=False)
+    report: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+
+
 class AlertNote(Base):
     __tablename__ = "alert_notes"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -122,6 +140,8 @@ class AlertNote(Base):
     alert: Mapped[Alert] = relationship(back_populates="notes")
 
 
+Index("idx_mlops_drift_end", MLOpsDriftRun.window_end.desc())
+Index("idx_mlops_drift_status_end", MLOpsDriftRun.drift_status, MLOpsDriftRun.window_end.desc())
 Index("idx_behavior_source_window", BehaviorFinding.source_ip, BehaviorFinding.window_start.desc())
 Index("idx_behavior_status_window", BehaviorFinding.status, BehaviorFinding.window_start.desc())
 Index("idx_alert_assignee", Alert.assigned_to)
@@ -157,7 +177,7 @@ def build_sessions(database_url: str) -> sessionmaker[Session]:
         raise RuntimeError("Database is not migrated; run: networkpulse db upgrade")
     with engine.connect() as connection:
         version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one_or_none()
-    if version != "0004_behavior_findings":
+    if version != "0005_mlops_drift_runs":
         engine.dispose()
         raise RuntimeError("Database migration required; run: networkpulse db upgrade")
     return sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)

@@ -12,6 +12,10 @@ on:
       - 'networkpulse/storage.py'
       - 'alembic/versions/0004_behavior_findings.py'
       - 'networkpulse/api.py'
+      - 'networkpulse/mlops_monitor.py'
+      - 'networkpulse/drift.py'
+      - 'networkpulse/model_registry.py'
+      - 'alembic/versions/0005_mlops_drift_runs.py'
   pull_request:
     branches: [main]
     paths:
@@ -24,6 +28,10 @@ on:
       - 'networkpulse/storage.py'
       - 'alembic/versions/0004_behavior_findings.py'
       - 'networkpulse/api.py'
+      - 'networkpulse/mlops_monitor.py'
+      - 'networkpulse/drift.py'
+      - 'networkpulse/model_registry.py'
+      - 'alembic/versions/0005_mlops_drift_runs.py'
   workflow_dispatch:
 permissions:
   contents: read

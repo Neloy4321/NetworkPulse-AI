@@ -29,7 +29,7 @@ from networkpulse.schemas import (
 from networkpulse.service import change_alert, ingest
 from networkpulse.storage import (
     Alert, AlertAudit, AlertNote, BehaviorFinding, BehaviorFindingAudit,
-    NetworkEvent, build_sessions, counts,
+    MLOpsDriftRun, NetworkEvent, build_sessions, counts,
 )
 
 STATIC = Path(__file__).parent / "static"
@@ -235,6 +235,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             counts(session)
         # Public readiness probes must not expose local training paths or provenance.
         return {"status": "ready"}
+
+    @app.get("/api/v1/mlops/drift-runs", tags=["model"])
+    def mlops_drift_runs(
+        limit: int = Query(20, ge=1, le=100),
+        offset: int = Query(0, ge=0, le=10000),
+        principal: Principal = Depends(read_scope),
+        db: Session = Depends(get_db),
+    ):
+        # Drift aggregates and model fingerprint are operational metadata:
+        # restrict to administrators even though the API is read-only.
+        principal.require("admin")
+        found = db.scalars(select(MLOpsDriftRun).order_by(
+            MLOpsDriftRun.window_end.desc(), MLOpsDriftRun.created_at.desc(),
+            MLOpsDriftRun.id.asc(),
+        ).offset(offset).limit(limit + 1)).all()
+        return {
+            "runs": [{
+                "id": item.id, "model_sha256": item.model_sha256,
+                "window_start_utc": item.window_start,
+                "window_end_utc": item.window_end,
+                "input_fingerprint_sha256": item.input_fingerprint,
+                "flow_count": item.flow_count,
+                "flagged_flows": item.flagged_flows,
+                "drift_status": item.drift_status,
+                "alert_budget_exceeded": item.alert_budget_exceeded,
+                "worst_psi": item.worst_psi,
+                "created_at": item.created_at,
+                "report": item.report,
+            } for item in found[:limit]],
+            "has_more": len(found) > limit,
+            "warning": "Unlabeled feature drift is not observed detection accuracy.",
+        }
 
     @app.get("/api/v1/intelligence/behavior", tags=["analytics"],
              dependencies=[Depends(read_scope)])
