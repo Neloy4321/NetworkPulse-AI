@@ -16,6 +16,9 @@ services:
       timeout: 3s
       retries: 10
     networks: [internal]
+  worker:
+    environment:
+      MODEL_SHA256: ${MODEL_SHA256:?Required trusted model SHA for worker}
   api:
     depends_on:
       security-redis:
