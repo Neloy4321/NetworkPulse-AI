@@ -26,6 +26,11 @@ class Settings:
     security_redis_url: str = ""
     global_rate_per_minute: int = 6000
     deployment_mode: str = "development"
+    browser_oidc_enabled: bool = False
+    oidc_auth_url: str = ""
+    oidc_token_url: str = ""
+    oidc_client_id: str = ""
+    public_origin: str = ""
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -51,9 +56,24 @@ class Settings:
             raise ValueError("Production deployment requires OIDC")
         if deployment == "production" and not os.getenv("NETWORKPULSE_SECURITY_REDIS_URL"):
             raise ValueError("Production deployment requires Redis security backend")
+        browser = os.getenv("NETWORKPULSE_BROWSER_OIDC", "false").lower() == "true"
+        if browser and (mode != "oidc" or not os.getenv("NETWORKPULSE_SECURITY_REDIS_URL")):
+            raise ValueError("Browser OIDC needs OIDC mode and Redis security backend")
+        if browser and not all(os.getenv(x) for x in (
+            "NETWORKPULSE_OIDC_AUTH_URL", "NETWORKPULSE_OIDC_TOKEN_URL",
+            "NETWORKPULSE_OIDC_CLIENT_ID", "NETWORKPULSE_PUBLIC_ORIGIN"
+        )):
+            raise ValueError("Browser OIDC needs OAuth endpoints, client ID and public origin")
+        if deployment == "production" and not browser:
+            raise ValueError("Production browser deployment requires OIDC PKCE session login")
         return cls(
             auth_mode=mode,
             deployment_mode=deployment,
+            browser_oidc_enabled=browser,
+            oidc_auth_url=os.getenv("NETWORKPULSE_OIDC_AUTH_URL", ""),
+            oidc_token_url=os.getenv("NETWORKPULSE_OIDC_TOKEN_URL", ""),
+            oidc_client_id=os.getenv("NETWORKPULSE_OIDC_CLIENT_ID", ""),
+            public_origin=os.getenv("NETWORKPULSE_PUBLIC_ORIGIN", ""),
             security_redis_url=os.getenv("NETWORKPULSE_SECURITY_REDIS_URL", ""),
             global_rate_per_minute=int(os.getenv("NETWORKPULSE_GLOBAL_RATE_PER_MINUTE", "6000")),
             oidc_issuer=os.getenv("NETWORKPULSE_OIDC_ISSUER", ""),
