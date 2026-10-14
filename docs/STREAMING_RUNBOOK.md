@@ -190,3 +190,47 @@ boundary. Do not run independent collectors against one checkpoint. Neither
 rotation continuity nor single-host locks solve distributed leader election,
 a crashed sensor before its own log fsync, lost Redis AOF writes or production
 service failover. Verify all those independently on the deployment host.
+
+## Supervised stream recovery and failure budget
+
+The streaming worker's **transaction-handler failure** policy is now
+fail-closed. One failed batch is deliberately left pending; the worker
+never ACKs or dead-letters it merely because the database or detector
+failed. Subsequent empty Redis polls **do not** clear the failure state or
+refresh its success heartbeat. Only an acknowledged batch whose database
+transaction committed successfully resets the failure budget.
+
+The worker retries with a bounded exponential backoff (0.25 seconds,
+doubling to the configured cap) while Redis's own idle-claim window prevents
+another consumer from stealing in-flight deliveries immediately. If no
+successful batch is committed within the configured stall budget from the
+first handler failure, the process exits with `WorkerStalledError` and
+leaves messages pending. Docker Compose's `restart: unless-stopped` then
+starts a new worker; Redis XAUTOCLAIM and database uniqueness resolve
+at-least-once recovery. An outage can cause repeated supervised restarts:
+configure log alerts and an operator incident workflow, and investigate
+before extending the failure budget. Do not assume container restart
+proves that PostgreSQL or the detector recovered.
+
+Production worker settings (both bounds validated at startup):
+
+```text
+NETWORKPULSE_WORKER_MAX_STALL_SECONDS=90    # allowed 30..900
+NETWORKPULSE_WORKER_RETRY_BACKOFF_MAX_SECONDS=4  # allowed 0.05..15
+```
+
+Compose passes these values as `networkpulse worker --max-stall-seconds`
+and `--retry-backoff-max-seconds`. The default 90-second stall budget is
+shorter than the 120-second worker heartbeat validity window. For a
+site-specific configuration, coordinate the stall budget and heartbeat
+liveness probes so permanent handler errors do not remain misleadingly
+healthy. A timeout is measured using a monotonic process clock; it is not
+an SLA or a guarantee of restart time. On a failed transaction the callback
+does not log the exception, raw flow payload, address or credentials.
+
+Real Redis/PostgreSQL CI verifies pending retention after a sustained
+injected handler outage, supervised exit, subsequent restored-worker
+reclamation and exact database event-ID reconciliation; the test does
+not shut down a production PostgreSQL service. Independent multi-node
+failover, Redis AOF durability, DNS/IdP outages and target-site p99
+processing latency still require authorized deployment drills.
