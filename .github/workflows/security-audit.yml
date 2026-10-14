@@ -1,6 +1,21 @@
 name: Dependency vulnerability audit
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'networkpulse/security/**'
+      - 'networkpulse/api.py'
+      - 'networkpulse/config.py'
+      - 'pyproject.toml'
+      - '.github/workflows/security-audit.yml'
+  pull_request:
+    paths:
+      - 'networkpulse/security/**'
+      - 'networkpulse/api.py'
+      - 'networkpulse/config.py'
+      - 'pyproject.toml'
+      - '.github/workflows/security-audit.yml'
   schedule:
     - cron: '0 3 * * 1'
 permissions:
@@ -15,7 +30,9 @@ jobs:
           python-version: '3.12'
       - name: Install locked-in workflow tools and app dependencies
         run: |
-          python -m pip install 'pip-audit>=2.7,<3'
+          python -m pip install 'pip-audit>=2.7,<3' 'bandit>=1.7,<2'
           python -m pip install -e '.[postgres,streaming]'
       - name: Audit installed dependencies
         run: pip-audit --local --progress-spinner off
+      - name: High-severity Python static security scan
+        run: bandit -r networkpulse/security networkpulse/api.py -ll -ii -q
