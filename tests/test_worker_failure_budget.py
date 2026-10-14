@@ -92,6 +92,9 @@ def test_successful_post_failure_commit_rearms_worker_health(app_settings, monke
                 # A successful processed result means Redis verified a committed
                 # transaction before ACK; this fake exercises supervisor wiring.
                 return {"processed": 25, "retried": 0, "dead_lettered": 0}
+            if self.calls == 4:
+                # This idle cycle probes the migrated local test database.
+                return {"processed": 0, "retried": 0, "dead_lettered": 0}
             raise RuntimeError("stop test worker after checking progress")
 
     def sleeper(seconds):
@@ -104,7 +107,7 @@ def test_successful_post_failure_commit_rearms_worker_health(app_settings, monke
             clock=lambda: fake[0], sleeper=sleeper,
             max_stall_seconds=30, retry_backoff_max_seconds=2,
         )
-    assert queue.calls == 4
+    assert queue.calls == 5
     # Neither failed processing nor empty polls refreshed liveness; a
     # successful batch and the following DB-probed idle cycle did.
     assert len(calls) == 2
