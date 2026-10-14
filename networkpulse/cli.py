@@ -96,6 +96,13 @@ def main(argv: list[str] | None = None) -> int:
     worker.add_argument("--consumer", default="networkpulse-worker-1")
     worker.add_argument("--once", action="store_true")
 
+    explain_cmd = cmd.add_parser("explain-model", help="Bounded model-score sensitivity audit")
+    explain_cmd.add_argument("--data", type=Path, required=True)
+    explain_cmd.add_argument("--model", type=Path, default=Path("data/model.joblib"))
+    explain_cmd.add_argument("--output", type=Path, default=Path("reports/score-sensitivity.json"))
+    explain_cmd.add_argument("--top-k", type=int, default=3)
+    explain_cmd.add_argument("--max-events", type=int, default=20)
+
     drift = cmd.add_parser("drift-report", help="Audit drift against a trusted model baseline")
     drift.add_argument("--data", type=Path, required=True)
     drift.add_argument("--model", type=Path, default=Path("data/model.joblib"))
@@ -225,6 +232,27 @@ def main(argv: list[str] | None = None) -> int:
         write_report(output, args.output)
         print(json.dumps({"report": str(args.output), "results": output["evaluation"],
                           "temporal_split_verified": False}, indent=2))
+        return 0
+
+    if args.command == "explain-model":
+        from itertools import islice
+        if not 1 <= args.max_events <= 25 or not 1 <= args.top_k <= 8:
+            parser.error("--max-events must be 1..25 and --top-k must be 1..8")
+        events = list(islice(iter_jsonl(args.data, "canonical"), args.max_events))
+        explanations = Detector.load(args.model).sensitivity_explanations(
+            events, top_k=args.top_k
+        )
+        report = {
+            "input_events": len(events), "feature_score_sensitivities": explanations,
+            "no_original_event_payloads_exported": True,
+            "method_warning": (
+                "One numeric feature is independently replaced with its median "
+                "benign training value. NOT SHAP, causal impact or proof of maliciousness."
+            ),
+        }
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        print(json.dumps({"report": str(args.output), "events": len(events)}, indent=2))
         return 0
 
     if args.command == "drift-report":
