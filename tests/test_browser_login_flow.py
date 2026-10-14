@@ -138,8 +138,8 @@ def test_oidc_login_csrf_rbac_and_logout(monkeypatch, app_settings, samples):
         assert replay.status_code == 401
 
 
-@pytest.mark.anyio
-async def test_real_rs256_oidc_identity_nonce_and_pkce_exchange(monkeypatch):
+def test_real_rs256_oidc_identity_nonce_and_pkce_exchange(monkeypatch):
+    import asyncio
     import time
     import httpx
     import jwt
@@ -183,15 +183,15 @@ async def test_real_rs256_oidc_identity_nonce_and_pkce_exchange(monkeypatch):
         MemoryRedis(), "https://idp.example", "https://idp.example/auth",
         "https://idp.example/token", "public-client", "https://soc.example"
     )
-    received, ttl = await browser.exchange(
+    received, ttl = asyncio.run(browser.exchange(
         "verified-auth-code", {"verifier": "generated-verifier", "nonce": nonce},
         verifier,
-    )
+    ))
     assert received == access
     assert 500 <= ttl <= 900
     with pytest.raises(HTTPException) as error:
-        await browser.exchange(
+        asyncio.run(browser.exchange(
             "verified-auth-code", {"verifier": "generated-verifier", "nonce": "incorrect"},
             verifier,
-        )
+        ))
     assert error.value.status_code == 401
