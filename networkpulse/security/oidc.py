@@ -38,6 +38,9 @@ class TokenVerifier:
         self.jwks = jwt.PyJWKClient(jwks_url, cache_keys=True, lifespan=600, timeout=4)
 
     def verify(self, token: str) -> Principal:
+        # Reject oversize tokens before any untrusted JWT parsing or JWKS lookup.
+        if not isinstance(token, str) or not 20 <= len(token) <= 8192:
+            raise HTTPException(401, detail="Invalid or expired access token")
         try:
             signing_key = self.jwks.get_signing_key_from_jwt(token)
             claims = self.jwt.decode(token, signing_key.key, algorithms=["RS256"],
@@ -46,6 +49,8 @@ class TokenVerifier:
                                      leeway=30)
         except self.jwt.PyJWTError as exc:
             raise HTTPException(401, detail="Invalid or expired access token") from exc
+        if not isinstance(claims.get("sub"), str) or not claims["sub"].strip():
+            raise HTTPException(401, detail="Invalid access token subject")
         role = claims.get(self.role_claim)
         if isinstance(role, list):
             role = next((x for x in ("admin", "analyst", "viewer") if x in role), None)
