@@ -190,3 +190,109 @@ def test_dead_letter_storage_failure_never_acknowledges_or_deletes_source():
     finally:
         client.delete(stream, queue.dead_letter)
         client.close()
+
+
+@pytest.mark.skipif(not os.getenv("REDIS_TEST_URL"), reason="CI Redis required")
+def test_missing_batch_ack_is_rejected_before_any_ack():
+    """A missing/duplicate ID must never partially ACK other pending flows."""
+    import redis
+    client = redis.Redis.from_url(os.environ["REDIS_TEST_URL"], decode_responses=True)
+    stream = "networkpulse:ci:ack-integrity:" + uuid.uuid4().hex
+    queue = FlowStream(client, stream=stream, group="ci", max_backlog=100)
+    try:
+        queue.initialize()
+        for flow in sample_flows(100, seed=1711)[:2]:
+            queue.enqueue(flow.model_dump(mode="json"))
+        rows = queue._entries("ack-investigation", recover=False, block_ms=5)
+        ids = [entry[0] for entry in rows]
+        assert len(ids) == 2
+        with pytest.raises(redis.exceptions.ResponseError, match="ACK_COUNT_MISMATCH"):
+            queue._ack_many([ids[0], "0-0"])
+        with pytest.raises(redis.exceptions.ResponseError, match="DUPLICATE_ACK_ID"):
+            queue._ack_many([ids[0], ids[0]])
+        assert client.xlen(stream) == 2
+        assert client.xpending(stream, "ci")["pending"] == 2
+        queue._ack_many(ids)
+        assert client.xlen(stream) == 0
+        assert client.xpending(stream, "ci")["pending"] == 0
+    finally:
+        client.delete(stream, queue.dead_letter)
+        client.close()
+
+
+@pytest.mark.skipif(not os.getenv("REDIS_TEST_URL"), reason="CI Redis required")
+def test_dlq_transfer_rejects_nonpending_source_without_creating_duplicate():
+    """An already-ACKed source cannot create an orphaned dead-letter copy."""
+    import redis
+    client = redis.Redis.from_url(os.environ["REDIS_TEST_URL"], decode_responses=True)
+    stream = "networkpulse:ci:dlq-integrity:" + uuid.uuid4().hex
+    queue = FlowStream(client, stream=stream, group="ci", max_backlog=100)
+    try:
+        queue.initialize()
+        queue.enqueue({"invalid": "schema"})
+        msg_id, fields = queue._entries("dlq-investigation", recover=False, block_ms=5)[0]
+        assert client.xack(stream, "ci", msg_id) == 1
+        with pytest.raises(redis.exceptions.ResponseError, match="DLQ_SOURCE_NOT_PENDING"):
+            queue._dead_letter(msg_id, fields, "InvalidSchema")
+        assert client.xlen(queue.dead_letter) == 0
+        assert client.xlen(stream) == 1
+    finally:
+        client.delete(stream, queue.dead_letter)
+        client.close()
+
+
+@pytest.mark.skipif(not os.getenv("REDIS_TEST_URL"), reason="CI Redis required")
+def test_oldest_redis_message_age_is_bounded_and_payload_free():
+    import redis
+    from networkpulse.streaming.monitoring import stream_snapshot
+
+    client = redis.Redis.from_url(os.environ["REDIS_TEST_URL"], decode_responses=True)
+    stream = "networkpulse:ci:flow-age:" + uuid.uuid4().hex
+    queue = FlowStream(client, stream=stream, group="ci", max_backlog=100)
+    try:
+        queue.initialize()
+        empty = stream_snapshot(client, stream=stream, group="ci",
+                                dead_letter=queue.dead_letter)
+        assert empty["oldest_age_seconds"] == 0.0
+        queue.enqueue({"payload": "private-not-to-be-exposed"})
+        observed = stream_snapshot(client, stream=stream, group="ci",
+                                   dead_letter=queue.dead_letter)
+        assert observed["stream_depth"] == 1
+        assert observed["oldest_age_seconds"] is not None
+        assert observed["oldest_age_seconds"] >= 0
+        assert "private-not-to-be-exposed" not in str(observed)
+    finally:
+        client.delete(stream, queue.dead_letter)
+        client.close()
+
+
+def test_worker_idle_probe_fails_closed_on_database_outage(monkeypatch, app_settings):
+    """No pending flow is required for PostgreSQL outage to break worker health."""
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+    from networkpulse.streaming.redis_streams import process_events
+
+    class EmptyQueue:
+        def initialize(self):
+            pass
+
+        def consume_batch_once(self, *_args, **_kwargs):
+            return {"processed": 0, "retried": 0, "dead_lettered": 0}
+
+    class OfflineSession:
+        def execute(self, _query):
+            raise ConnectionError("postgres outage injected")
+
+    class OfflineMaker:
+        kw = {"bind": SimpleNamespace(dispose=lambda: None)}
+
+        def __call__(self):
+            return nullcontext(OfflineSession())
+
+    heartbeats = []
+    monkeypatch.setattr("networkpulse.storage.build_sessions", lambda _url: OfflineMaker())
+    monkeypatch.setattr("networkpulse.ops_health.mark_success",
+                        lambda *args: heartbeats.append(args))
+    with pytest.raises(ConnectionError, match="postgres outage injected"):
+        process_events(EmptyQueue(), "fault-probe", settings=app_settings, once=True)
+    assert heartbeats == []
