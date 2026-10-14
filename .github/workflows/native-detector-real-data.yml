@@ -15,6 +15,9 @@ on:
       - 'networkpulse/mlops_monitor.py'
       - 'networkpulse/drift.py'
       - 'networkpulse/model_registry.py'
+      - 'networkpulse/training_release.py'
+      - 'networkpulse/cli.py'
+      - 'tests/test_training_release.py'
       - 'alembic/versions/0005_mlops_drift_runs.py'
   pull_request:
     branches: [main]
@@ -31,6 +34,9 @@ on:
       - 'networkpulse/mlops_monitor.py'
       - 'networkpulse/drift.py'
       - 'networkpulse/model_registry.py'
+      - 'networkpulse/training_release.py'
+      - 'networkpulse/cli.py'
+      - 'tests/test_training_release.py'
       - 'alembic/versions/0005_mlops_drift_runs.py'
   workflow_dispatch:
 permissions:

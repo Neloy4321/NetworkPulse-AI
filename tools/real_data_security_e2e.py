@@ -22,7 +22,9 @@ from fastapi.testclient import TestClient
 
 from networkpulse.api import create_app
 from networkpulse.config import Settings
-from networkpulse.detector import train
+from networkpulse.detector import Detector, train
+from networkpulse.training_release import build_candidate, verify_candidate
+from networkpulse.model_registry import ModelRegistry
 from networkpulse.evaluation.live_unsw import read_reservoir
 from networkpulse.evaluation.unsw import _hash_file
 from networkpulse.migrations import upgrade_database
@@ -78,6 +80,35 @@ def replay(archive: Path) -> dict:
         model_file = directory / "private-model.joblib"
         database = "sqlite:///" + str(directory / "private.db")
         model.save(model_file)
+        # The release pipeline is exercised on the SAME original, independently
+        # held-out training capture used by the native production Detector.
+        # No original IP/raw events or trained artifacts leave this ephemeral CI runner.
+        release_result = build_candidate(
+            sorted(training, key=lambda e: e.timestamp),
+            name="unsw-native-candidate", root=directory / "candidates",
+            dataset_sha256=digest, source_id="unsw_raw_real_capture_security_replay",
+            seed=42, min_f1=0.0, max_alert_fraction=1.0,
+            dataset_selection="reservoir_sample_of_verified_raw_capture",
+            validation_events=sorted(candidate_events, key=lambda e: e.timestamp),
+            validation_source_sha256=digest,
+            validation_source_id="unsw_nb15_later_capture_4",
+        )
+        checked_release = verify_candidate(Path(release_result["directory"]))
+        assert checked_release["sha256"] == release_result["model_sha256"]
+        released_model = Detector.load(Path(release_result["model_path"]))
+        earlier_scores = model.score(replay_events[:30])
+        released_scores = released_model.score(replay_events[:30])
+        assert [x.anomaly_score for x in earlier_scores] == [
+            x.anomaly_score for x in released_scores
+        ], "Candidate must reproduce the deployed detector's scores"
+        registry = ModelRegistry(directory / "registry")
+        entry = registry.register(
+            "unsw-native-candidate", Path(release_result["model_path"]),
+            release_directory=Path(release_result["directory"]),
+        )
+        assert registry.status()["active"] is None
+        assert entry["release_lineage"]["raw_source_sha256"] == digest
+        assert entry["release_lineage"]["provenance_independently_verified"] is False
         upgrade_database(database)
         settings = Settings(
             database_url=database,
@@ -260,6 +291,9 @@ def replay(archive: Path) -> dict:
         "training_capture": "UNSW-NB15_1.csv",
         "heldout_capture": "UNSW-NB15_4.csv",
         "train_unique_rows": len(training),
+        "candidate_release_model_sha256": release_result["model_sha256"],
+        "candidate_release_functional_sha256": release_result["functional_holdout_sha256"],
+        "candidate_release_registered_not_promoted": registry.status()["active"] is None,
         "heldout_unique_rows": len(candidate_events),
         "replayed_real_flows": len(replay_events),
         "inserted_real_flows": inserted,
@@ -289,6 +323,10 @@ def replay(archive: Path) -> dict:
             "mlops_snapshot_idempotency_verified": True,
             "mlops_viewer_denied_admin_allowed": True,
             "mlops_no_labels_inferred": True,
+            "real_training_release_integrity_verified": True,
+            "real_training_candidate_scores_reproducible": True,
+            "real_training_candidate_registry_not_deployed": True,
+            "real_training_split_quality_gate_verified": True,
         },
         "limitations": [
             "OIDC/JWKS issuer was replaced with locally generated test keys, not real IdP",

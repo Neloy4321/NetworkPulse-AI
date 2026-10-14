@@ -47,6 +47,36 @@ def main(argv: list[str] | None = None) -> int:
     fit.add_argument("--quantile", type=float, default=0.97)
     fit.add_argument("--seed", type=int, default=42)
 
+    release = cmd.add_parser(
+        "train-release", help="Verify pinned labeled canonical data and stage immutable candidate"
+    )
+    release.add_argument("--data", type=Path, required=True)
+    release.add_argument("--dataset-sha256", required=True,
+                         help="Exact SHA-256 computed independently for authorized source")
+    release.add_argument("--source-id", required=True,
+                         help="Non-sensitive declared provenance identifier")
+    release.add_argument("--validation-data", type=Path,
+                         help="Separately dated labeled canonical holdout capture")
+    release.add_argument("--validation-sha256",
+                         help="Independently pinned SHA of the later holdout capture")
+    release.add_argument("--validation-source-id",
+                         help="Declared provenance ID of later holdout capture")
+    release.add_argument("--name", required=True)
+    release.add_argument("--root", type=Path, default=Path("data/releases"))
+    release.add_argument("--max-events", type=int, default=20000)
+    release.add_argument("--min-gap-seconds", type=float, default=0.0)
+    release.add_argument("--seed", type=int, default=42)
+    release.add_argument("--quantile", type=float, default=.97)
+    release.add_argument("--min-f1", type=float, default=0.0)
+    release.add_argument("--max-alert-fraction", type=float, default=1.0)
+    release.add_argument("--max-fpr-upper-95", type=float, default=None)
+    release.add_argument("--registry-root", type=Path,
+                         help="Optional local registry for candidate registration (not promotion)")
+    verify_release = cmd.add_parser(
+        "verify-release", help="Verify candidate bundle SHA without loading joblib"
+    )
+    verify_release.add_argument("--directory", type=Path, required=True)
+
     local = cmd.add_parser("ingest-file", help="Parse and store local Zeek/Suricata/canonical JSONL")
     local.add_argument("--path", type=Path, required=True)
     local.add_argument("--format", choices=["canonical", "zeek", "suricata"], required=True)
@@ -155,6 +185,62 @@ def main(argv: list[str] | None = None) -> int:
     archive.add_argument("--commit", action="store_true")
 
     args = parser.parse_args(argv)
+
+    if args.command == "verify-release":
+        from networkpulse.training_release import verify_candidate
+        print(json.dumps(verify_candidate(args.directory), indent=2))
+        return 0
+
+    if args.command == "train-release":
+        from networkpulse.data_quality import fingerprint
+        from networkpulse.training_release import build_candidate
+        if not 100 <= args.max_events <= 100000:
+            parser.error("max-events must be 100..100000")
+        if any([args.validation_data, args.validation_sha256, args.validation_source_id]):
+            if not all([args.validation_data, args.validation_sha256, args.validation_source_id]):
+                parser.error("later validation requires data, SHA and source identifier together")
+
+        def read_pinned(path, expected_digest):
+            if not path.is_file() or path.stat().st_size > 250_000_000:
+                parser.error("training/validation dataset must be a file <=250 MB")
+            if fingerprint(path) != expected_digest:
+                parser.error("training/validation data SHA-256 differs from pinned source")
+            loaded_events = []
+            for event in iter_jsonl(path, "canonical"):
+                loaded_events.append(event)
+                if len(loaded_events) > args.max_events:
+                    parser.error("dataset exceeds max-events; no silent truncation")
+            return loaded_events
+
+        loaded = read_pinned(args.data, args.dataset_sha256)
+        later = (read_pinned(args.validation_data, args.validation_sha256)
+                 if args.validation_data else None)
+        result = build_candidate(
+            loaded, name=args.name, root=args.root,
+            dataset_sha256=args.dataset_sha256, source_id=args.source_id,
+            seed=args.seed, quantile=args.quantile, max_events=args.max_events,
+            min_boundary_gap_seconds=args.min_gap_seconds,
+            min_f1=args.min_f1, max_alert_fraction=args.max_alert_fraction,
+            max_fpr_upper_95=args.max_fpr_upper_95,
+            dataset_selection="complete_canonical_file",
+            validation_events=later,
+            validation_source_sha256=args.validation_sha256,
+            validation_source_id=args.validation_source_id,
+        )
+        if args.registry_root:
+            from networkpulse.model_registry import ModelRegistry
+            registered = ModelRegistry(args.registry_root).register(
+                args.name, Path(result["model_path"]), min_f1=args.min_f1,
+                max_alert_fraction=args.max_alert_fraction,
+                max_fpr_upper_95=args.max_fpr_upper_95,
+                release_directory=Path(result["directory"]),
+            )
+            result["registry"] = {
+                "root": str(args.registry_root), "sha256": registered["sha256"],
+                "state": "registered_candidate_not_promoted",
+            }
+        print(json.dumps(result, indent=2))
+        return 0
 
     if args.command == "model-registry":
         from networkpulse.model_registry import ModelRegistry
