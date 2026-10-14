@@ -109,6 +109,12 @@ def main(argv: list[str] | None = None) -> int:
     registry.add_argument("--active", type=Path, default=Path("data/model.joblib"))
     registry.add_argument("--min-f1", type=float, default=0.0)
     registry.add_argument("--max-alert-fraction", type=float, default=1.0)
+    registry.add_argument("--max-fpr-upper-95", type=float, default=None,
+                          help="Opt-in registration FPR 95% Wilson upper bound gate")
+    registry.add_argument("--production", action="store_true",
+                          help="Require independent-site, live-sensor and human evidence")
+    registry.add_argument("--evidence", type=Path,
+                          help="Operator-audited production validation receipt JSON")
     registry.add_argument("--seed", type=int, default=42)
 
     archive = cmd.add_parser("archive", help="Archive old unalerted flows; dry-run unless --commit")
@@ -128,13 +134,18 @@ def main(argv: list[str] | None = None) -> int:
             if not args.file:
                 parser.error("model-registry register requires --file")
             result = managed.register(args.name, args.file, min_f1=args.min_f1,
-                                      max_alert_fraction=args.max_alert_fraction)
+                                      max_alert_fraction=args.max_alert_fraction,
+                                      max_fpr_upper_95=args.max_fpr_upper_95)
         elif args.action == "status":
             result = managed.status()
         elif args.action == "promote":
-            result = managed.promote(args.name, args.active)
+            result = managed.promote(args.name, args.active,
+                                     production=args.production,
+                                     evidence_path=args.evidence,
+                                     max_fpr_upper_95=args.max_fpr_upper_95 or .05)
         elif args.action == "rollback":
-            result = managed.rollback(args.active)
+            result = managed.rollback(args.active, production=args.production,
+                                      evidence_path=args.evidence)
         else:
             result = managed.shadow(args.name, args.active,
                                     sample_flows(count=300, seed=args.seed)[-75:])
