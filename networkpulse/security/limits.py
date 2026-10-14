@@ -14,44 +14,78 @@ from starlette.responses import JSONResponse
 
 
 class MutationLimiter:
-    def __init__(self, per_minute: int):
-        if per_minute < 1:
-            raise ValueError('per-minute rate limit must be >= 1')
+    """Bounded single-process admission control; never trust forwarded IPs."""
+
+    def __init__(self, per_minute: int, max_peers: int = 10000):
+        if per_minute < 1 or not 10 <= max_peers <= 100000:
+            raise ValueError('invalid mutation rate or peer capacity')
         self.limit = per_minute
+        self.max_peers = max_peers
         self.buckets = {}
         self.lock = threading.Lock()
 
     def admit(self, peer: str, now: float | None = None) -> bool:
         now = time.monotonic() if now is None else now
         with self.lock:
-            bucket = self.buckets.setdefault(peer, deque())
+            bucket = self.buckets.get(peer)
+            if bucket is None:
+                if len(self.buckets) >= self.max_peers:
+                    # Reclaim inactive peers before refusing new peers. Never
+                    # evict active buckets: that resets their rate-limit debt.
+                    for key, values in list(self.buckets.items()):
+                        if not values or now - values[-1] >= 60:
+                            del self.buckets[key]
+                    if len(self.buckets) >= self.max_peers:
+                        return False
+                bucket = deque()
+                self.buckets[peer] = bucket
             while bucket and now - bucket[0] >= 60:
                 bucket.popleft()
             if len(bucket) >= self.limit:
                 return False
             bucket.append(now)
-            # Periodically bound memory for distinct clients.
-            if len(self.buckets) > 10000:
-                self.buckets = {k: v for k, v in self.buckets.items()
-                                if v and now - v[-1] < 60}
             return True
 
 
 def security_middleware_factory(*, max_body_bytes: int, per_minute: int):
+    """Security policy for HTTP resources, including early rejected responses."""
     if max_body_bytes < 1024:
         raise ValueError('MAX_BODY_BYTES must be >= 1024')
     limiter = MutationLimiter(per_minute)
 
+    def protect_headers(response, *, https: bool, path: str):
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['Referrer-Policy'] = 'no-referrer'
+        response.headers['X-Frame-Options'] = 'DENY'
+        response.headers['Permissions-Policy'] = 'camera=(), microphone=(), geolocation=()'
+        if https:
+            response.headers['Strict-Transport-Security'] = 'max-age=31536000'
+        if path not in {'/docs', '/redoc'} and not path.startswith('/docs/'):
+            response.headers['Content-Security-Policy'] = (
+                "default-src 'self'; base-uri 'none'; object-src 'none'; "
+                "frame-ancestors 'none'; form-action 'self'; "
+                "script-src 'self'; style-src 'self' 'unsafe-inline'; "
+                "connect-src 'self'; img-src 'self' data:"
+            )
+        if path == '/' or path.startswith('/api/') or path == '/metrics':
+            response.headers['Cache-Control'] = 'no-store'
+        return response
+
     async def security_middleware(request: Request, call_next):
+        def rejected(detail: str, status: int, headers=None):
+            return protect_headers(
+                JSONResponse({'detail': detail}, status_code=status, headers=headers),
+                https=request.url.scheme == 'https', path=request.url.path
+            )
         if request.method in {'POST', 'PATCH', 'PUT', 'DELETE'}:
             header = request.headers.get('content-length')
             if header:
                 try:
                     size = int(header)
                 except ValueError:
-                    return JSONResponse({'detail': 'Invalid Content-Length'}, status_code=400)
+                    return rejected('Invalid Content-Length', 400)
                 if size > max_body_bytes or size < 0:
-                    return JSONResponse({'detail': 'Request body too large'}, status_code=413)
+                    return rejected('Request body too large', 413)
             # Header-less/chunked messages are enforced while streaming, not after
             # unlimited buffering. Starlette's request receive channel is repopulated
             # with one validated body for downstream FastAPI/Pydantic processing.
@@ -66,12 +100,11 @@ def security_middleware_factory(*, max_body_bytes: int, per_minute: int):
             request._body = bytes(buf)
             peer = request.client.host if request.client else 'unknown'
             if not limiter.admit(peer):
-                return JSONResponse({'detail': 'Mutation rate limit exceeded'}, status_code=429,
-                                    headers={'Retry-After': '60'})
+                return rejected('Mutation rate limit exceeded', 429,
+                                {'Retry-After': '60'})
         response = await call_next(request)
-        response.headers['X-Content-Type-Options'] = 'nosniff'
-        response.headers['Referrer-Policy'] = 'no-referrer'
-        response.headers['X-Frame-Options'] = 'DENY'
-        return response
+        return protect_headers(
+            response, https=request.url.scheme == 'https', path=request.url.path
+        )
 
     return security_middleware
