@@ -135,9 +135,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return model
 
     @app.get("/auth/login", include_in_schema=False)
-    def browser_login():
+    def browser_login(request: Request):
         if browser is None:
             raise HTTPException(404, detail="Browser login disabled")
+        # GET login attempts also consume a shared Redis admission slot.
+        if distributed_limiter is not None and not distributed_limiter.admit(
+            "oidc-login:" + (request.client.host if request.client else "unknown")
+        ):
+            raise HTTPException(429, detail="Login attempt budget exceeded")
         location, state = browser.start()
         response = RedirectResponse(location, status_code=302)
         response.set_cookie(
@@ -151,6 +156,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                state: str = Query(min_length=16, max_length=128)):
         if browser is None:
             raise HTTPException(404, detail="Browser login disabled")
+        if distributed_limiter is not None and not distributed_limiter.admit(
+            "oidc-callback:" + (request.client.host if request.client else "unknown")
+        ):
+            raise HTTPException(429, detail="Login callback budget exceeded")
         pending = browser.consume(state, request.cookies.get(STATE_COOKIE))
         token, ttl = await browser.exchange(code, pending, verifier)
         session_id = browser.create_session(token, ttl)
