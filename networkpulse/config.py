@@ -23,6 +23,9 @@ class Settings:
     oidc_jwks_url: str = ""
     oidc_role_claim: str = "networkpulse_role"
     redis_metrics_url: str = ""
+    security_redis_url: str = ""
+    global_rate_per_minute: int = 6000
+    deployment_mode: str = "development"
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -41,8 +44,18 @@ class Settings:
             "NETWORKPULSE_OIDC_ISSUER", "NETWORKPULSE_OIDC_AUDIENCE", "NETWORKPULSE_OIDC_JWKS_URL"
         )):
             raise ValueError("OIDC requires issuer, audience, and JWKS URL")
+        deployment = os.getenv("NETWORKPULSE_DEPLOYMENT", "development").lower()
+        if deployment not in {"development", "production"}:
+            raise ValueError("Invalid deployment mode")
+        if deployment == "production" and mode != "oidc":
+            raise ValueError("Production deployment requires OIDC")
+        if deployment == "production" and not os.getenv("NETWORKPULSE_SECURITY_REDIS_URL"):
+            raise ValueError("Production deployment requires Redis security backend")
         return cls(
             auth_mode=mode,
+            deployment_mode=deployment,
+            security_redis_url=os.getenv("NETWORKPULSE_SECURITY_REDIS_URL", ""),
+            global_rate_per_minute=int(os.getenv("NETWORKPULSE_GLOBAL_RATE_PER_MINUTE", "6000")),
             oidc_issuer=os.getenv("NETWORKPULSE_OIDC_ISSUER", ""),
             oidc_audience=os.getenv("NETWORKPULSE_OIDC_AUDIENCE", ""),
             oidc_jwks_url=os.getenv("NETWORKPULSE_OIDC_JWKS_URL", ""),
