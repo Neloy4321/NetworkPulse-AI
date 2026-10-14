@@ -1,0 +1,28 @@
+{
+  "date": "2026-10-14",
+  "type": "OWASP ZAP passive baseline (not independent penetration test)",
+  "target": "Ephemeral loopback 127.0.0.1:8000, synthetic data, local development mode",
+  "run": "https://github.com/Neloy4321/NetworkPulse-AI/actions/runs/38545768495",
+  "fail_new": 0,
+  "warn_new": 9,
+  "pass": 58,
+  "warning_categories": [
+    "Cross-Domain JavaScript Source File Inclusion",
+    "Information Disclosure - Suspicious Comments",
+    "Content Security Policy (CSP) Header Not Set",
+    "Non-Storable Content",
+    "CSP: style-src unsafe-inline",
+    "Modern Web Application",
+    "Private IP Disclosure",
+    "Sub Resource Integrity Attribute Missing",
+    "Cross-Origin-Embedder-Policy Header Missing or Invalid"
+  ],
+  "note": "Warnings need individual triage; zero fail categories is not zero vulnerabilities. /docs loads developer Swagger assets that are blocked at the public Caddy gateway. Scan did not authenticate with a real OIDC provider or test real HTTPS.",
+  "limitations": [
+    "No independent authorized assessor",
+    "No real IdP, external DNS or staging site",
+    "Passive DAST only",
+    "No authenticated role/session traversal with real identities",
+    "No active intrusive testing or production traffic"
+  ]
+}
