@@ -64,9 +64,13 @@ function protocolChart(protocols, total) {
   });
   $('proto-donut').style.background = `conic-gradient(${segments.join(', ') || '#304052 0 100%'})`;
   $('protocol-total').textContent = fmt(total);
-  $('protocol-legend').innerHTML = entries.length ? entries.map(([key, value], i) =>
-    `<div class="proto-line"><span><i style="background:${colors[i % colors.length]}"></i>${esc(key.toUpperCase())}</span><b>${(value / total * 100).toFixed(1)}%</b></div>`
+  $('protocol-legend').innerHTML = entries.length ? entries.map(([key, value]) =>
+    `<div class="proto-line"><span><i></i>${esc(key.toUpperCase())}</span><b>${(value / total * 100).toFixed(1)}%</b></div>`
   ).join('') : '<span class="muted">No protocol data yet</span>';
+  // CSSOM is compatible with CSP style-src 'self'; no inline style attributes.
+  $('protocol-legend').querySelectorAll('.proto-line i').forEach((dot, i) => {
+    dot.style.backgroundColor = colors[i % colors.length];
+  });
 }
 function drawTimeline(data) {
   const canvas = $('traffic-chart');
