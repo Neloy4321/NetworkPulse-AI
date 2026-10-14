@@ -86,6 +86,12 @@ def security_middleware_factory(*, max_body_bytes: int, per_minute: int):
                     return rejected('Invalid Content-Length', 400)
                 if size > max_body_bytes or size < 0:
                     return rejected('Request body too large', 413)
+            # Admit before reading a potentially expensive chunked body. A
+            # known oversize Content-Length was already rejected without charge.
+            peer = request.client.host if request.client else 'unknown'
+            if not limiter.admit(peer):
+                return rejected('Mutation rate limit exceeded', 429,
+                                {'Retry-After': '60'})
             # Header-less/chunked messages are enforced while streaming, not after
             # unlimited buffering. Starlette's request receive channel is repopulated
             # with one validated body for downstream FastAPI/Pydantic processing.
@@ -93,15 +99,11 @@ def security_middleware_factory(*, max_body_bytes: int, per_minute: int):
             async for piece in request.stream():
                 buf.extend(piece)
                 if len(buf) > max_body_bytes:
-                    return JSONResponse({'detail': 'Request body too large'}, status_code=413)
+                    return rejected('Request body too large', 413)
             # Starlette BaseHTTPMiddleware's cached request uses _body when
             # constructing downstream receive messages. The streaming check above
             # prevents allocating a body larger than the configured cap.
             request._body = bytes(buf)
-            peer = request.client.host if request.client else 'unknown'
-            if not limiter.admit(peer):
-                return rejected('Mutation rate limit exceeded', 429,
-                                {'Retry-After': '60'})
         response = await call_next(request)
         return protect_headers(
             response, https=request.url.scheme == 'https', path=request.url.path
