@@ -9,13 +9,14 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
-from fastapi.responses import FileResponse, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi.responses import FileResponse, Response, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from networkpulse.config import Settings
 from networkpulse.security.oidc import Principal, TokenVerifier
+from networkpulse.security.browser_login import BrowserLogin, STATE_COOKIE, SESSION_COOKIE
 from networkpulse.security.limits import security_middleware_factory
 from networkpulse.security.csv_safety import safe_spreadsheet_cell
 from networkpulse.observability import metric_middleware, exporter, INGEST_TOTAL, ALERT_ACTIONS, MODEL_INFERENCE
@@ -59,6 +60,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                               settings.oidc_jwks_url, settings.oidc_role_claim)
                 if settings.auth_mode == "oidc" else None)
 
+    browser = (BrowserLogin(
+        redis_client, settings.oidc_issuer, settings.oidc_auth_url,
+        settings.oidc_token_url, settings.oidc_client_id, settings.public_origin,
+    ) if settings.browser_oidc_enabled else None)
+
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         try:
@@ -74,17 +80,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         description="Flow observability, anomaly triage and auditable review. Not an IDS replacement.",
     )
 
+    app.state.browser_login = browser
     app.middleware("http")(metric_middleware)
     app.middleware("http")(security_middleware_factory(
         max_body_bytes=settings.max_body_bytes, per_minute=settings.mutation_rate_per_minute,
         distributed_limiter=distributed_limiter))
 
-    def require_identity(authorization: Annotated[str | None, Header()] = None) -> Principal:
+    def require_identity(request: Request,
+                         authorization: Annotated[str | None, Header()] = None,
+                         x_csrf_token: Annotated[str | None, Header()] = None) -> Principal:
         if verifier is None:
             return Principal(subject="local-operator", role="admin")
-        if not authorization or not authorization.startswith("Bearer "):
-            raise HTTPException(401, detail="OIDC bearer access token required")
-        return verifier.verify(authorization[len("Bearer "):])
+        if authorization is not None:
+            if not authorization.startswith("Bearer "):
+                raise HTTPException(401, detail="Bearer access token required")
+            return verifier.verify(authorization[len("Bearer "):])
+        if browser is not None:
+            session = browser.session(request.cookies.get(SESSION_COOKIE))
+            if session is not None:
+                principal = verifier.verify(session["token"])
+                if request.method in {"POST", "PATCH", "PUT", "DELETE"}:
+                    origin = request.headers.get("origin")
+                    if (origin != browser.origin or not x_csrf_token or
+                            not secrets.compare_digest(session["csrf"], x_csrf_token)):
+                        raise HTTPException(403, detail="Invalid browser CSRF or Origin")
+                return principal
+            if request.url.path == "/":
+                raise HTTPException(307, headers={"Location": "/auth/login"},
+                                    detail="Sign-in required")
+        raise HTTPException(401, detail="OIDC bearer access token or session required")
 
     def read_scope(principal: Principal = Depends(require_identity)) -> Principal:
         principal.require("viewer")
