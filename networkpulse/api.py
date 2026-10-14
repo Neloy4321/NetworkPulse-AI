@@ -114,7 +114,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(503, detail="Model artifact unavailable")
         with make_session() as session:
             counts(session)
-        return {"status": "ready", "model_source": model.metadata.get("source")}
+        # Public readiness probes must not expose local training paths or provenance.
+        return {"status": "ready"}
 
     @app.get("/api/v1/intelligence/hosts", tags=["analytics"], dependencies=[Depends(read_scope)])
     def intelligence_hosts(
