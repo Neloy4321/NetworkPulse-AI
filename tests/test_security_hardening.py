@@ -32,3 +32,33 @@ def test_security_headers_on_success_and_early_rejections(client, app_settings):
     assert malformed.status_code == 413
     assert malformed.headers["x-frame-options"] == "DENY"
     assert malformed.headers["cache-control"] == "no-store"
+
+def test_chunked_body_rejected_before_buffering_after_rate_limit(app_settings):
+    from dataclasses import replace
+    from fastapi.testclient import TestClient
+    from networkpulse.api import create_app
+
+    opts = replace(app_settings, max_body_bytes=1024, mutation_rate_per_minute=1)
+    with TestClient(create_app(opts)) as client:
+        headers = {"X-API-Key": opts.api_key, "Content-Type": "application/json"}
+        first = client.post("/api/v1/ingest", json={"events": []}, headers=headers)
+        assert first.status_code == 422
+
+        def large_chunks():
+            yield b"{" + b"x" * 2000 + b"}"
+
+        denied = client.post(
+            "/api/v1/ingest", content=large_chunks(),
+            headers={**headers, "Transfer-Encoding": "chunked"}
+        )
+        assert denied.status_code == 429
+        assert denied.headers["x-frame-options"] == "DENY"
+        assert denied.headers["retry-after"] == "60"
+
+    with TestClient(create_app(opts)) as fresh_client:
+        too_big = fresh_client.post(
+            "/api/v1/ingest", content=large_chunks(),
+            headers={**headers, "Transfer-Encoding": "chunked"}
+        )
+        assert too_big.status_code == 413
+        assert too_big.headers["x-content-type-options"] == "nosniff"
