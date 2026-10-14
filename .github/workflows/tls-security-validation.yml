@@ -6,6 +6,23 @@ on:
       - 'infra/Caddyfile'
       - 'compose.yaml'
       - 'compose.tls.yaml'
+      - 'Dockerfile'
+      - 'networkpulse/cli.py'
+      - 'networkpulse/ops_health.py'
+      - 'networkpulse/api.py'
+      - 'tests/test_worker_health_config.py'
+      - '.github/workflows/tls-security-validation.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'infra/Caddyfile'
+      - 'compose.yaml'
+      - 'compose.tls.yaml'
+      - 'Dockerfile'
+      - 'networkpulse/cli.py'
+      - 'networkpulse/ops_health.py'
+      - 'networkpulse/api.py'
+      - 'tests/test_worker_health_config.py'
       - '.github/workflows/tls-security-validation.yml'
   workflow_dispatch:
 permissions:
@@ -29,6 +46,22 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate merged Docker Compose
         run: docker compose -f compose.yaml -f compose.tls.yaml config -q
+      - name: Build exact production application image
+        run: docker build --tag networkpulse-deployment-ci:latest .
+      - name: Assert production image imports and missing-schema fail-closed startup
+        run: |
+          docker run --rm --entrypoint python networkpulse-deployment-ci:latest \
+            -c "import networkpulse.api, networkpulse.ops_health, networkpulse.mlops_monitor"
+          if docker run --rm \
+            -e NETWORKPULSE_DEPLOYMENT=production \
+            -e DATABASE_URL=sqlite:////tmp/nonexistent-production-schema.db \
+            -e NETWORKPULSE_API_KEY=ci-only-unused-strong-value \
+            networkpulse-deployment-ci:latest; then
+            echo "Unsafe: production image started without explicit schema migration" >&2
+            exit 1
+          fi
+          echo "Production correctly refused unmigrated database."
+
       - name: Validate pinned Caddy reverse proxy
         run: |
           docker run --rm \

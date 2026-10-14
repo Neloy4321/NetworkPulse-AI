@@ -100,3 +100,46 @@ executed test of the actual deployed/staging hostname before public launch.
 
 See [independent pentest handoff](PENETRATION_TEST_HANDOFF.md) and
 [security threat model](SECURITY_THREAT_MODEL.md).
+
+
+## Deploy/release hardening (2026-10-14)
+
+**Required first:** take an independently tested `pg_dump` backup and verify
+restore access. Before starting the production API, deliberately migrate the
+database using the *same image and configuration* as production:
+
+```bash
+docker compose -f compose.yaml -f compose.tls.yaml up -d db security-redis
+docker compose -f compose.yaml -f compose.tls.yaml build api
+docker compose -f compose.yaml -f compose.tls.yaml run --rm --no-deps api networkpulse db upgrade
+docker compose -f compose.yaml -f compose.tls.yaml run --rm --no-deps api networkpulse db check
+docker compose -f compose.yaml -f compose.tls.yaml --profile streaming up -d --no-build
+docker compose -f compose.yaml -f compose.tls.yaml --profile streaming ps
+```
+
+The API now uses **read-only schema validation** (`networkpulse db check`)
+on production startup, and explicitly fails if the configured revision is not
+current. It does NOT run a concurrent Alembic migration while replicas start.
+The development path keeps local automatic migrations and seeded demo training,
+but **production startup rejects demo/synthetic model metadata**. This metadata
+guard is not a cryptographic signature or independent site validation;
+manually verify the trusted joblib artifact, model SHA-256 and operator approval
+before loading it. Do not upload an untrusted pickle/joblib.
+
+Behavior and MLOps workers write an atomic successful-cycle heartbeat under
+container `/tmp`, evaluated by healthchecks with separate freshness limits
+(180 seconds / 900 seconds). A worker crash exits and restarts under Docker
+restart policy; a **stalled-but-running container is reported unhealthy**, not
+automatically restarted by plain Docker Compose. Configure your host monitoring
+to page operators on unhealthy containers and perform controlled restart after
+investigation. An MLOps `insufficient_data` cycle can still be healthy as
+a *process*; it does not mean the model or traffic is healthy. Independently
+alert when required hourly MLOps evidence stops arriving.
+
+The `streaming` profile must be explicitly enabled or the Redis ingest
+worker, behavioral correlation worker and MLOps worker will not start.
+For a complete operational deployment, additionally validate OIDC/PKCE with
+the real IdP, HTTPS/certificate issuance, backups/restore, Redis outages,
+high-volume DB performance, hardening, on-call alerts, user permissions and
+external penetration test. CI is a deployment configuration/smoke check, not
+a proof of live site readiness.

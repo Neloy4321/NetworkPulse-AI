@@ -62,7 +62,12 @@ services:
               "--lookback-hours", "3", "--delay-minutes", "10"]
     restart: unless-stopped
     healthcheck:
-      disable: true
+      test: ["CMD", "python", "-m", "networkpulse.ops_health", "--role", "mlops", "--path", "/tmp/networkpulse-mlops-heartbeat.json", "--max-age-seconds", "900"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 180s
+    stop_grace_period: 30s
     depends_on:
       db:
         condition: service_healthy
@@ -83,7 +88,12 @@ services:
               "--lookback", "30", "--lateness", "2"]
     restart: unless-stopped
     healthcheck:
-      disable: true
+      test: ["CMD", "python", "-m", "networkpulse.ops_health", "--role", "behavior", "--path", "/tmp/networkpulse-behavior-heartbeat.json", "--max-age-seconds", "180"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+    stop_grace_period: 30s
     depends_on:
       db:
         condition: service_healthy

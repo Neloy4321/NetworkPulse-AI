@@ -48,6 +48,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise ValueError("Production API requires browser OIDC login")
         if not settings.model_sha256 or not settings.model_path.is_file():
             raise ValueError("Production API requires checksum-pinned trusted model")
+        from networkpulse.security.deployment import validate_production_urls
+        validate_production_urls(settings)
     redis_client = None
     distributed_limiter = None
     if settings.security_redis_url:
@@ -69,6 +71,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if len(settings.model_sha256) != 64 or sha256(settings.model_path) != settings.model_sha256:
             raise ValueError('Trusted model artifact SHA-256 verification failed')
     model = Detector.load(settings.model_path) if settings.model_path.is_file() else None
+    # Production deployment must never accidentally serve the developer's
+    # seeded model. The source metadata is a minimum guard, not an attestation:
+    # operators still must verify independent validation and provenance.
+    if settings.deployment_mode == "production":
+        if model is None or "synthetic" in str(model.metadata.get("source", "")).lower():
+            raise ValueError("Production refuses missing or synthetic/demo model artifacts")
     verifier = (TokenVerifier(settings.oidc_issuer, settings.oidc_audience,
                               settings.oidc_jwks_url, settings.oidc_role_claim)
                 if settings.auth_mode == "oidc" else None)
