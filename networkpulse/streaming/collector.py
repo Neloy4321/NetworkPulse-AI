@@ -11,6 +11,8 @@ ensures exactly-once committed effects.
 from __future__ import annotations
 
 import fcntl
+import hashlib
+import hmac
 import json
 import os
 import stat
@@ -90,7 +92,21 @@ def _read_checkpoint(path: Path) -> dict | None:
             or any(type(v) is not int or v < 0 for v in identity)
             or type(offset) is not int or offset < 0):
         raise ContinuityError("Collector checkpoint identity/offset is invalid")
-    return {"identity": identity, "offset": offset}
+    # Old offset-only checkpoints remain readable; upgraded checkpoints
+    # verify a trailing byte fingerprint to detect copytruncate + regrowth.
+    anchor_len = record.get("anchor_len", 0)
+    anchor_hash = record.get("anchor_sha256")
+    if (type(anchor_len) is not int or not 0 <= anchor_len <= min(offset, 128)
+            or (anchor_len == 0 and anchor_hash is not None)
+            or (anchor_len > 0 and (
+                not isinstance(anchor_hash, str) or len(anchor_hash) != 64
+                or any(c not in "0123456789abcdef" for c in anchor_hash)
+            ))):
+        raise ContinuityError("Collector checkpoint anchor is invalid")
+    return {
+        "identity": identity, "offset": offset,
+        "anchor_len": anchor_len, "anchor_sha256": anchor_hash,
+    }
 
 
 class LogCollector:
@@ -152,7 +168,8 @@ class LogCollector:
         )
 
     def _consume(self, path: Path, expected: list[int], offset: int,
-                 limit: int, *, rotated: bool) -> tuple[int, int, int, bool]:
+                 limit: int, *, rotated: bool, anchor_len: int = 0,
+                 anchor_sha256: str | None = None) -> tuple[int, int, int, bool]:
         published = skipped = 0
         with _open_regular(path) as source:
             info = os.fstat(source.fileno())
@@ -161,6 +178,18 @@ class LogCollector:
             if info.st_size < offset:
                 raise ContinuityError(
                     "Sensor log truncated before checkpoint; copytruncate is unsafe"
+                )
+            # Compare a sample of previously acknowledged bytes before
+            # reading anything new. Size checks alone cannot detect logs
+            # truncated and rapidly rewritten past their prior offset.
+            source.seek(offset - min(offset, 128))
+            tail = source.read(min(offset, 128))
+            if (anchor_len and not hmac.compare_digest(
+                    hashlib.sha256(tail[-anchor_len:]).hexdigest(),
+                    anchor_sha256 or "",
+            )):
+                raise ContinuityError(
+                    "Previously checkpointed sensor bytes were rewritten"
                 )
             source.seek(offset)
             while published + skipped < limit:
@@ -197,8 +226,12 @@ class LogCollector:
                         self.enqueue(event.model_dump(mode="json"))
                         published += 1
                 offset = source.tell()
+                tail = (tail + line)[-128:]
                 _checkpoint(self.checkpoint, {
                     "identity": expected, "offset": offset,
+                    "anchor_len": len(tail),
+                    "anchor_sha256": hashlib.sha256(tail).hexdigest()
+                    if tail else None,
                 })
                 if offset <= line_start:
                     raise ContinuityError("Sensor read offset failed to advance")
@@ -231,7 +264,8 @@ class LogCollector:
             rotated = self._rotated_inode(saved["identity"])
             a, b, offset, done = self._consume(
                 rotated, saved["identity"], saved["offset"], max_rows,
-                rotated=True,
+                rotated=True, anchor_len=saved.get("anchor_len", 0),
+                anchor_sha256=saved.get("anchor_sha256"),
             )
             published += a
             skipped += b
@@ -257,6 +291,8 @@ class LogCollector:
         a, b, offset, _ = self._consume(
             self.path, saved["identity"], saved["offset"],
             max_rows - published - skipped, rotated=False,
+            anchor_len=saved.get("anchor_len", 0),
+            anchor_sha256=saved.get("anchor_sha256"),
         )
         return {
             "published": published + a, "skipped": skipped + b,
