@@ -148,3 +148,45 @@ DLQ transfer refusal, and a 1,000-flow Redis/PostgreSQL scorer burst with
 a fault injected before the first transaction, followed by worker recovery
 and exact persisted-ID reconciliation. CI measurements are host-specific
 functional evidence, not independent traffic throughput certification.
+
+## Production sensor-file continuity and rotation policy
+
+The collector is **loss-intolerant** about source rotation. It persists the
+actual opened file's POSIX device/inode and byte offset after each successfully
+published or intentionally skipped complete JSONL record. The checkpoint is an
+atomic, mode-0600 file with a synced directory entry. A SHA-256 of the last 128 checkpointed bytes also detects same-inode rewriting after rapid copytruncate/regrowth, even when the file has already grown beyond the old offset. A stable advisory lock
+at `<checkpoint>.lock` prevents two collector processes from using the same
+checkpoint concurrently; the continuous `follow` command owns the lock for
+its lifetime. Do not put checkpoints on filesystems that lack reliable POSIX
+inode identity, advisory locking, atomic rename or directory fsync semantics.
+
+**Required sensor configuration:** use rename/create log rotation, not
+`copytruncate`, and retain rotated **uncompressed, unmodified** files in the
+same directory long enough for the collector to drain them. The collector
+searches the bounded directory for the exact previous inode. It always drains
+any unread complete records from the rotated file **before** consuming the
+replacement current filename. It will reject an unavailable previous inode,
+copytruncate/truncation and incomplete final rotated records rather than
+resetting the checkpoint or silently skipping unknown traffic. A writer that
+deletes, compresses, moves, or unlinks the old inode too early makes automatic
+continuity recovery impossible. Configure Zeek/Suricata retention accordingly.
+
+**Recovery incident workflow:** alert on a failed collector process and
+rising `networkpulse_stream_oldest_age_seconds`; preserve the checkpoint,
+raw rotated files and Redis backlog. Identify the missing inode and restore
+the original log file into the **same directory** from authorized retention
+storage, preserving its inode when possible (moving an existing retained file
+within the same filesystem). When inode recovery is impossible, treat the
+event as an explicit sensor-data gap. Quarantine the checkpoint and pursue an
+approved backfill/restore process with a new, separately reviewed checkpoint.
+Do not delete checkpoint state or use a manual reset as an unrecorded fix.
+Redis publication is at-least-once: if the process dies after successful
+XADD but before checkpoint fsync, replays may occur and the database's
+unique flow key prevents duplicate committed effects.
+
+Rotation directories are bounded to 4096 entries per scan. Symlinked sensor
+input is rejected to prevent unexpectedly following a different trust
+boundary. Do not run independent collectors against one checkpoint. Neither
+rotation continuity nor single-host locks solve distributed leader election,
+a crashed sensor before its own log fsync, lost Redis AOF writes or production
+service failover. Verify all those independently on the deployment host.
