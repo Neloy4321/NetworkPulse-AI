@@ -104,6 +104,18 @@ def main(argv: list[str] | None = None) -> int:
     behavior_worker.add_argument("--burst-per-minute", type=int, default=120)
     behavior_worker.add_argument("--until", help="Timezone-aware ISO 8601 backfill end")
 
+    monitor = cmd.add_parser(
+        "mlops-monitor", help="Persist drift/lineage evidence on the deployed pinned model"
+    )
+    monitor.add_argument("--once", action="store_true")
+    monitor.add_argument("--interval", type=int, default=300)
+    monitor.add_argument("--delay-minutes", type=int, default=10)
+    monitor.add_argument("--lookback-hours", type=int, default=3)
+    monitor.add_argument("--max-rows", type=int, default=5000)
+    monitor.add_argument("--expected-sha256", help="Trusted deployed model SHA-256")
+    monitor.add_argument("--start", help="ISO 8601 UTC start for operator-controlled backfill")
+    monitor.add_argument("--end", help="ISO 8601 UTC end for operator-controlled backfill")
+
     worker = cmd.add_parser("worker", help="Consume Redis Streams and commit scored flows")
     worker.add_argument("--consumer", default="networkpulse-worker-1")
     worker.add_argument("--once", action="store_true")
@@ -183,6 +195,46 @@ def main(argv: list[str] | None = None) -> int:
         finally:
             maker.kw["bind"].dispose()
         print(json.dumps(result, indent=2))
+        return 0
+
+    if args.command == "mlops-monitor":
+        from datetime import datetime, timedelta
+        from networkpulse.mlops_monitor import completed_hour, run_monitor
+        settings = Settings.from_env()
+        expected = args.expected_sha256 or settings.model_sha256
+        if not expected or len(expected) != 64:
+            parser.error("mlops-monitor requires trusted MODEL_SHA256 / --expected-sha256")
+        if not 60 <= args.interval <= 3600 or not 1 <= args.lookback_hours <= 24:
+            parser.error("invalid monitoring cadence/lookback")
+        if bool(args.start) != bool(args.end):
+            parser.error("--start and --end must be supplied together")
+        if args.start and not args.once:
+            parser.error("manual backfill --start/--end requires --once")
+        maker = build_sessions(settings.database_url)
+        try:
+            while True:
+                if args.start:
+                    windows = [(datetime.fromisoformat(args.start.replace("Z", "+00:00")),
+                                datetime.fromisoformat(args.end.replace("Z", "+00:00")))]
+                else:
+                    low, finish = completed_hour(delay_minutes=args.delay_minutes)
+                    windows = [
+                        (low - timedelta(hours=index), finish - timedelta(hours=index))
+                        for index in reversed(range(args.lookback_hours))
+                    ]
+                for start, end in windows:
+                    with maker() as session:
+                        result = run_monitor(
+                            session, model_path=settings.model_path,
+                            expected_sha256=expected, start=start, end=end,
+                            max_rows=args.max_rows,
+                        )
+                    print(json.dumps(result), flush=True)
+                if args.once:
+                    break
+                time.sleep(args.interval)
+        finally:
+            maker.kw["bind"].dispose()
         return 0
 
     if args.command == "behavior-worker":

@@ -84,3 +84,7 @@ To use PostgreSQL, set `DATABASE_URL` for this process, along with the relevant 
 ## v0.4 addendum
 
 Alembic revision `0003_soc_accountability` adds `alerts.assigned_to`, `alert_audit.actor`, and `alert_notes` with supporting indexes. Upgrades from the original v0.1 legacy schema or migrated v0.2 preserve existing event and alert IDs; new actor fields are null for historical operations. Tests exercise upgrades from both starting states. The same `networkpulse db upgrade` command applies, with an automatic SQLite pre-migration snapshot.
+
+## v0.5+ operational MLOps evidence migration
+
+Revision `0005_mlops_drift_runs` adds immutable, model-SHA and exact-input-fingerprint keyed drift monitoring history. Existing flow, alert, SOC and behavior case tables are unchanged. Apply `networkpulse db upgrade` with a verified backup before deploying either the API or `mlops-worker`. Models and original flow rows are not copied into this table; only aggregate PSI/alert-volume reports are stored.

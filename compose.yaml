@@ -55,6 +55,27 @@ services:
     volumes:
       - model_data:/app/data
     networks: [internal]
+  mlops-worker:
+    build: .
+    profiles: ["streaming"]
+    command: ["networkpulse", "mlops-monitor", "--interval", "300",
+              "--lookback-hours", "3", "--delay-minutes", "10"]
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://networkpulse:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/networkpulse
+      NETWORKPULSE_API_KEY: ${NETWORKPULSE_API_KEY:?Set NETWORKPULSE_API_KEY in .env}
+      MODEL_PATH: /app/data/model.joblib
+      MODEL_SHA256: ${MODEL_SHA256:?Set verified deployed model SHA256 in .env}
+    volumes:
+      - model_data:/app/data:ro
+    networks: [internal]
   behavior-worker:
     build: .
     profiles: ["streaming"]

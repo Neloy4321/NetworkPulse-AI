@@ -17,7 +17,7 @@ from networkpulse.storage import Alert, NetworkEvent, build_sessions
 @pytest.mark.skipif(not os.getenv("PG_TEST_DATABASE_URL"), reason="No CI PostgreSQL service")
 def test_postgres_migration_bigint_and_upsert_contention():
     url = os.environ["PG_TEST_DATABASE_URL"]
-    assert upgrade_database(url)["revision"] == "0004_behavior_findings"
+    assert upgrade_database(url)["revision"] == "0005_mlops_drift_runs"
     maker = build_sessions(url)
     engine = maker.kw["bind"]
     try:
@@ -104,3 +104,46 @@ def test_postgres_concurrent_behavior_case_upserts_preserve_unique_incident():
             )) == 1
     finally:
         maker.kw["bind"].dispose()
+
+
+@pytest.mark.skipif(not os.getenv("PG_TEST_DATABASE_URL"), reason="No CI PostgreSQL service")
+def test_postgres_concurrent_mlops_snapshot_upsert():
+    """Two monitoring workers must emit one exact immutable report."""
+    from datetime import datetime, timedelta, timezone
+    from networkpulse.mlops_monitor import run_monitor
+    from networkpulse.model_registry import sha256
+    from networkpulse.storage import MLOpsDriftRun
+    from pathlib import Path
+    import tempfile
+
+    url = os.environ["PG_TEST_DATABASE_URL"]
+    upgrade_database(url)
+    samples = sample_flows(310, seed=47)
+    detector = train(samples, seed=47)
+    selected = samples[230:310]
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "trusted.joblib"
+        detector.save(path)
+        expected = sha256(path)
+        maker = build_sessions(url)
+        try:
+            with maker() as db:
+                assert ingest(db, detector, selected)["inserted"] == len(selected)
+            start = selected[0].timestamp - timedelta(seconds=1)
+            end = selected[-1].timestamp + timedelta(minutes=5)
+
+            def monitor(_):
+                with maker() as db:
+                    return run_monitor(db, model_path=path, expected_sha256=expected,
+                                       start=start, end=end)
+
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                reports = list(executor.map(monitor, range(3)))
+            assert len({r["id"] for r in reports}) == 1
+            assert sum(bool(r["created"]) for r in reports) == 1
+            with maker() as db:
+                assert db.scalar(select(func.count(MLOpsDriftRun.id)).where(
+                    MLOpsDriftRun.model_sha256 == expected,
+                )) == 1
+        finally:
+            maker.kw["bind"].dispose()

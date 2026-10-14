@@ -218,6 +218,38 @@ def replay(archive: Path) -> dict:
                                            headers=authorization("viewer"))
                         assert evidence.status_code == 200
                         assert evidence.json()[0]["new_status"] == "resolved"
+                    # Run the identical production MLOps pipeline on the
+                    # original held-out records, not simulated flow fixtures.
+                    from datetime import timedelta
+                    from networkpulse.mlops_monitor import run_monitor
+                    from networkpulse.model_registry import sha256
+                    begin = min(event.timestamp for event in replay_events) - timedelta(minutes=5)
+                    finish = max(event.timestamp for event in replay_events) + timedelta(minutes=5)
+                    model_digest = sha256(model_file)
+                    with maker() as session:
+                        monitored = run_monitor(
+                            session, model_path=model_file, expected_sha256=model_digest,
+                            start=begin, end=finish, max_rows=1500,
+                        )
+                        assert monitored["created"] and monitored["flow_count"] == len(replay_events)
+                    with maker() as session:
+                        repeat_monitor = run_monitor(
+                            session, model_path=model_file, expected_sha256=model_digest,
+                            start=begin, end=finish, max_rows=1500,
+                        )
+                        assert not repeat_monitor["created"]
+                        assert repeat_monitor["id"] == monitored["id"]
+                    forbidden = api.get("/api/v1/mlops/drift-runs",
+                                        headers=authorization("viewer"))
+                    assert forbidden.status_code == 403
+                    report_response = api.get("/api/v1/mlops/drift-runs",
+                                              headers=authorization("admin"))
+                    assert report_response.status_code == 200
+                    mlops_runs = report_response.json()["runs"]
+                    assert len(mlops_runs) == 1
+                    assert mlops_runs[0]["flow_count"] == len(replay_events)
+                    assert mlops_runs[0]["model_sha256"] == model_digest
+                    assert mlops_runs[0]["report"]["data_lineage"]["labels_available"] is False
                 finally:
                     maker.kw["bind"].dispose()
 
@@ -232,6 +264,9 @@ def replay(archive: Path) -> dict:
         "replayed_real_flows": len(replay_events),
         "inserted_real_flows": inserted,
         "durable_behavior_cases": candidate_report["candidate_upserts"],
+        "mlops_monitored_real_flows": monitored["flow_count"],
+        "mlops_model_sha256": monitored["model_sha256"],
+        "mlops_input_fingerprint": monitored["input_fingerprint"],
         "operational_behavior_windows": len(behavior["windows"]),
         "repeat_duplicates": repeated.json()["duplicates"],
         "alerts_created": alerts_created,
@@ -250,6 +285,10 @@ def replay(archive: Path) -> dict:
             "real_behavior_counts_match_ingest": True,
             "durable_behavior_upsert_real_capture": True,
             "behavior_case_audit_preserved_after_reprocess": bool(cases),
+            "mlops_real_capture_drift_report_persisted": True,
+            "mlops_snapshot_idempotency_verified": True,
+            "mlops_viewer_denied_admin_allowed": True,
+            "mlops_no_labels_inferred": True,
         },
         "limitations": [
             "OIDC/JWKS issuer was replaced with locally generated test keys, not real IdP",

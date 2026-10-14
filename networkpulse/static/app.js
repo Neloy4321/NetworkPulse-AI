@@ -272,6 +272,29 @@ async function triageBehaviorFinding(id) {
   } catch (err) { toast('Case review failed: ' + err.message); }
 }
 
+let lastMLOpsFetch = 0;
+async function refreshMLOps(force = false) {
+  if (!force && Date.now() - lastMLOpsFetch < 30000) return;
+  lastMLOpsFetch = Date.now();
+  try {
+    const result = await getJson('/api/v1/mlops/drift-runs?limit=1');
+    if (!result.runs.length) {
+      $('mlops-note').textContent = 'No complete drift report yet; monitoring worker may not have enough recorded flows.';
+      return;
+    }
+    const last = result.runs[0];
+    $('mlops-drift').textContent = last.drift_status.toUpperCase();
+    $('mlops-flows').textContent = fmt(last.flow_count);
+    $('mlops-budget').textContent = last.alert_budget_exceeded ? 'EXCEEDED' : 'WITHIN LIMIT';
+    $('mlops-window').textContent = last.window_end_utc.slice(0, 16).replace('T', ' ') + ' UTC';
+    $('mlops-note').textContent = 'Model ' + last.model_sha256.slice(0, 12) +
+      '… · immutable input fingerprint · PSI is unlabeled distribution drift, not accuracy.';
+  } catch (err) {
+    $('mlops-note').textContent = err.message === 'Insufficient permissions'
+      ? 'Administrator access required.' : 'MLOps evidence unavailable: ' + err.message;
+  }
+}
+
 let lastBehaviorFetch = 0;
 async function refreshBehavior(force = false) {
   if (!force && Date.now() - lastBehaviorFetch < 30000) return;
@@ -352,6 +375,7 @@ async function refresh() {
     latestTrends = trends; drawTimeline(trends); renderAlerts(alerts);
     await refreshBehavior();
     await refreshBehaviorFindings();
+    await refreshMLOps();
     $('alerts-page').textContent = `Page ${Math.floor(alertsOffset / alertsLimit)+1}`;
     $('alerts-prev').disabled = alertsOffset === 0;
     $('alerts-next').disabled = alerts.length < alertsLimit;

@@ -117,6 +117,20 @@
         <div class="model-data"><div class="model-detail"><span>TRAINING SOURCE</span><strong id="model-data-source">—</strong></div><div class="model-detail"><span>TRAIN / CALIBRATION / HOLDOUT</span><strong id="model-splits">—</strong></div><div class="model-detail"><span>THRESHOLD QUANTILE</span><strong id="model-quantile">—</strong></div><div class="model-detail"><span>HOLDOUT F1</span><strong id="model-f1">—</strong></div></div>
         <p class="model-warning">Synthetic demo evaluation is not real-world network intrusion detection performance. Baseline shifts, label availability, false positives and external validation need attention before operational use.</p>
       </section>
+      <section class="panel" id="mlops-evidence" aria-label="Production model monitoring">
+        <div class="panel-header"><div>
+          <span class="overline">06 // OPERATIONAL MLOPS</span>
+          <h2>Deployed model drift evidence</h2>
+          <p class="section-sub">Admin-only immutable reports from persisted flows and the checksum-pinned model.</p>
+        </div></div>
+        <div class="model-data">
+          <div class="model-detail"><span>LATEST DRIFT</span><strong id="mlops-drift">—</strong></div>
+          <div class="model-detail"><span>MONITORED FLOWS</span><strong id="mlops-flows">—</strong></div>
+          <div class="model-detail"><span>ALERT BUDGET</span><strong id="mlops-budget">—</strong></div>
+          <div class="model-detail"><span>LAST UTC WINDOW</span><strong id="mlops-window">—</strong></div>
+        </div>
+        <p class="table-note" id="mlops-note">Reading administrative monitoring history.</p>
+      </section>
       <footer><span>NETWORKPULSE AI <i>•</i> Engineering prototype v0.5.0</span><span>Designed for reproducible analysis, not automated blocking.</span></footer>
       <div id="toast" class="toast" role="status" aria-live="polite"></div>
     </main>

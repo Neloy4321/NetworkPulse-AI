@@ -82,3 +82,59 @@ the evidence source, site independence or the approver**, nor cryptographically
 verify an independent lab's signatures. A real change-management process,
 source validation, secure identity and a reviewed approval process remain
 mandatory for production operations. The runbook does not claim otherwise.
+
+
+## Operational drift and lineage evidence — revision 0005
+
+Unlike the offline `drift-report` command, the `mlops-monitor` CLI is an
+**operational processor** over the production `network_events` SQL table
+written by HTTP and Redis Streams ingestion.
+
+1. **Migrate first**: `networkpulse db upgrade` after a DBA-verified backup
+   (`pg_dump` for PostgreSQL; built-in backup for SQLite).
+   Revision `0005_mlops_drift_runs` adds an append-only model/window/snapshot
+   evidence table without touching flow alerts or case assignments.
+2. Pin **a trusted, locally created and reviewed model** by exact
+   `MODEL_SHA256`. The worker compares digest *before* loading the joblib
+   artifact; joblib/pickle remains unsafe for untrusted third-party files.
+3. Run `networkpulse mlops-monitor --interval 300 --lookback-hours 3
+   --delay-minutes 10` (Compose `streaming` profile includes `mlops-worker`).
+   The daemon reviews up to three complete past UTC hours to tolerate restarts
+   and delayed ingest. Backfill older windows with
+   `networkpulse mlops-monitor --once --start 2026-10-14T00:00:00+00:00
+   --end 2026-10-14T01:00:00+00:00`.
+4. **Admin only**: `GET /api/v1/mlops/drift-runs` returns paginated reports;
+   the SOC dashboard includes a compact monitoring summary. Viewer and
+   Analyst tokens cannot read model monitoring evidence.
+5. Each report is uniquely tied to model SHA, UTC bounds and SHA-256 digest
+   of every persisted flow ID included, in chronological order. Every
+   committed flow in the window is used, not a synthetic substitution or
+   silent random sample. Duplicate worker runs do not create duplicate
+   records. A late arrival creates a *new immutable snapshot* and preserves
+   earlier reports for incident reconstruction.
+6. The record includes source-system counts, PSI by known model feature,
+   alert fraction and alert-budget breaches; it holds no flow IPs, original
+   payloads, credentials or ground-truth labels. Unlabeled PSI cannot prove
+   accuracy, improved attack detection or malicious behavior. **No automatic
+   training, calibration or model promotion occurs.**
+
+### Production operational limits
+
+- Safety gate: 30–10,000 flow rows per report (default 5,000). Windows over
+  limit fail *visibly* without publishing a biased sampled report; split
+  intervals or design proper pre-aggregated model feature rollups with
+  measured accuracy before enabling high-volume deployment.
+- Fewer than 30 flows return `insufficient_data` and do not claim normal
+  drift. This condition is printed by the worker; external log/health
+  monitoring must alert when expected reports stop arriving.
+- Always measure PostgreSQL p95 query latency, memory usage and model scoring
+  throughput for the actual site. Configure external process watchdog and
+  metrics alerts, and explicitly backfill outages older than the 3-hour
+  periodic revisit. This is not automatically verified by GitHub CI.
+- The existing registry promotion gate remains human-controlled and fails
+  closed for insufficient independent-site evidence. A strong drift signal
+  is a *review prompt*, never automatic promotion.
+- Source data labels are not persisted in the production ingest table. Real
+  UNSW-NB15 replay demonstrates identical runtime data-to-evidence plumbing;
+  it does **not** prove real-world detection accuracy or independent network
+  generalization.
