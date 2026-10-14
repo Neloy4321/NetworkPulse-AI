@@ -7,6 +7,8 @@ on:
       - 'networkpulse/evaluation/live_unsw.py'
       - 'tests/test_real_unsw_canonical.py'
       - 'tools/real_data_security_e2e.py'
+      - 'networkpulse/behavior.py'
+      - 'networkpulse/api.py'
   pull_request:
     branches: [main]
     paths:
@@ -14,6 +16,8 @@ on:
       - 'networkpulse/evaluation/live_unsw.py'
       - 'tests/test_real_unsw_canonical.py'
       - 'tools/real_data_security_e2e.py'
+      - 'networkpulse/behavior.py'
+      - 'networkpulse/api.py'
   workflow_dispatch:
 permissions:
   contents: read

@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from sqlalchemy import BigInteger, func, inspect, select
 
+from networkpulse.behavior import activity_windows
 from networkpulse.detector import train
 from networkpulse.migrations import upgrade_database
 from networkpulse.service import ingest
@@ -40,5 +41,13 @@ def test_postgres_migration_bigint_and_upsert_contention():
             assert session.scalar(select(func.count(NetworkEvent.id))) == len(flows)
             assert session.scalar(select(func.count(Alert.id))) == sum(x["alerts_created"] for x in results)
             assert session.get(NetworkEvent, flows[0].key()).orig_bytes == 9_000_000_000
+            # This runs the new production SQL window aggregation against the
+            # real PostgreSQL CI service, using the rows ingested above.
+            behavior = activity_windows(
+                session, until=max(e.timestamp for e in flows),
+                lookback_minutes=1440, window_minutes=5, limit=100,
+            )
+            assert sum(w["flow_count"] for w in behavior["windows"]) == len(flows)
+            assert all(w["distinct_destination_hosts"] >= 1 for w in behavior["windows"])
     finally:
         engine.dispose()

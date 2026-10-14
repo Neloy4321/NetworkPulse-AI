@@ -117,6 +117,25 @@ def replay(archive: Path) -> dict:
                 assert visible.json()["flows"] == len(replay_events)
                 assert api.get("/metrics", headers=authorization("viewer")).status_code == 403
                 assert api.get("/metrics", headers=authorization("admin")).status_code == 200
+                # Exact production behavior query over real held-out captured
+                # flow records, not a synthetic mock of its SQL implementation.
+                end_time = max(flow.timestamp for flow in replay_events)
+                behavior_response = api.get(
+                    "/api/v1/intelligence/behavior",
+                    params={"window_minutes": 5, "lookback_minutes": 1440,
+                            "until": end_time.isoformat(), "limit": 100},
+                    headers=authorization("viewer"),
+                )
+                assert behavior_response.status_code == 200
+                behavior = behavior_response.json()
+                assert not behavior["has_more"]
+                assert sum(w["flow_count"] for w in behavior["windows"]) == len(replay_events)
+                assert all(w["distinct_destination_ports"] > 0 for w in behavior["windows"])
+                assert all(w["distinct_destination_hosts"] > 0 for w in behavior["windows"])
+                assert api.get("/api/v1/intelligence/behavior").status_code == 401
+                assert api.get("/api/v1/intelligence/behavior",
+                               params={"window_minutes": 2},
+                               headers=authorization("viewer")).status_code == 422
 
     # Privacy contract: aggregate only. Never put IPs/rows/tokens in output.
     return {
@@ -128,6 +147,7 @@ def replay(archive: Path) -> dict:
         "heldout_unique_rows": len(candidate_events),
         "replayed_real_flows": len(replay_events),
         "inserted_real_flows": first["inserted"],
+        "operational_behavior_windows": len(behavior["windows"]),
         "repeat_duplicates": repeated.json()["duplicates"],
         "alerts_created": first["alerts_created"],
         "validation": {
@@ -141,6 +161,8 @@ def replay(archive: Path) -> dict:
             "admin_metrics_allowed": True,
             "viewer_metrics_denied": True,
             "replay_idempotent": True,
+            "operational_behavior_api_real_flows": True,
+            "real_behavior_counts_match_ingest": True,
         },
         "limitations": [
             "OIDC/JWKS issuer was replaced with locally generated test keys, not real IdP",

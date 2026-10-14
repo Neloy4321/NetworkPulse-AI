@@ -20,6 +20,7 @@
       <nav class="navigation">
         <a class="nav-link current" href="#overview"><span>◫</span> Overview</a>
         <a class="nav-link" href="#traffic"><span>⌁</span> Network traffic</a>
+        <a class="nav-link" href="#behavior"><span>▦</span> Behavior windows</a>
         <a class="nav-link" href="#investigations"><span>◈</span> Investigations</a>
         <a class="nav-link" href="#model"><span>◇</span> Model intelligence</a>
       </nav>
@@ -57,6 +58,18 @@
           <div class="donut-wrap"><div id="proto-donut" class="donut" role="img" aria-label="Protocol distribution"><div><strong id="protocol-total">—</strong><small>flows</small></div></div></div>
           <div class="protocol-list" id="protocol-legend"><span class="muted">Loading protocols…</span></div>
         </article>
+      </section>
+      <section class="panel table-panel" id="behavior" aria-label="Source traffic behavior">
+        <div class="panel-header"><div>
+          <span class="overline">03 // OPERATIONAL NETWORK BEHAVIOR</span>
+          <h2>Source behavior windows</h2>
+          <p class="section-sub">Exact SQL aggregates over ingested flows; heuristic cues are not confirmed attacks.</p>
+        </div><label class="filter-label" for="behavior-window-size">UTC window
+          <select id="behavior-window-size"><option value="5">5 minutes</option><option value="1">1 minute</option></select>
+        </label></div>
+        <div class="table-scroll"><table><thead><tr><th>UTC WINDOW</th><th>SOURCE</th><th>FLOWS</th><th>PORTS / DESTINATIONS</th><th>ML FLAGS</th><th>BEHAVIORAL CUES</th></tr></thead>
+          <tbody id="behavior-body"><tr><td colspan="6">Loading behavior analytics…</td></tr></tbody></table></div>
+        <p class="table-note" id="behavior-status">Latest 60 minutes; updates every 30 seconds.</p>
       </section>
       <section class="panel table-panel" id="investigations"><div class="panel-header"><div><span class="overline">03 // ALERT OPERATIONS</span><h2>Investigation queue</h2><p class="section-sub">Alert state changes are recorded in an audit log.</p></div><div class="filter-controls">
 <label class="filter-label" for="status-filter">Status <select id="status-filter"><option value="">All statuses</option><option value="open">Open</option><option value="investigating">Investigating</option><option value="resolved">Resolved</option><option value="false_positive">False positive</option></select></label>
