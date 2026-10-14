@@ -234,3 +234,83 @@ reclamation and exact database event-ID reconciliation; the test does
 not shut down a production PostgreSQL service. Independent multi-node
 failover, Redis AOF durability, DNS/IdP outages and target-site p99
 processing latency still require authorized deployment drills.
+
+## Production worker SLIs and graceful shutdown
+
+The streaming worker owns its own Prometheus instrumentation, **separate
+from the FastAPI process**. In Compose's streaming profile, it exposes
+`NETWORKPULSE_WORKER_METRICS_PORT=9101` on the **private internal Docker
+network only**; no host-port mapping is configured. Do not route this
+unauthenticated internal exporter through public Caddy. When deploying
+outside Compose, explicitly configure a private network, egress/ingress
+firewall policies and an authorized Prometheus scraper. When the streaming
+profile is absent, the optional worker scrape target will be down; do not
+conflate this with an enabled streaming service outage.
+
+Supported fixed-cardinality metrics:
+
+- `networkpulse_worker_queue_residence_seconds` (histogram): Redis-assigned
+  enqueue timestamp to **successful Redis ACK**; uses Redis's own `TIME`
+  to avoid producer/consumer host clock differences. Only ACKed events count.
+- `networkpulse_worker_batch_processing_seconds` (histogram): bounded
+  receive, validation, scoring, SQL and ACK cycle **when activity exists**.
+  Not sensor-packet-to-alert latency.
+- `networkpulse_worker_committed_flows_total`: acknowledged delivery count
+  after DB commit; this includes at-least-once replay deliveries and is
+  not necessarily a unique row count.
+- `networkpulse_worker_failed_deliveries_total` and
+  `networkpulse_worker_handler_failures_total`: retries and failed
+  scoring/DB handler operations. A retry count is an attempt count, not
+  unique lost flows.
+- `networkpulse_worker_dead_lettered_total`: permanently invalid
+  deliveries transferred to DLQ.
+- `networkpulse_worker_healthy`: 1 after a successful committed
+  cycle or an idle cycle with an actual SQL readiness probe, 0 when
+  degraded or exiting. It is not a cluster-wide quorum guarantee.
+
+Useful PromQL queries after traffic has actually flowed:
+
+```promql
+sum(rate(networkpulse_worker_committed_flows_total[5m]))
+histogram_quantile(0.95, sum by (le) (rate(networkpulse_worker_queue_residence_seconds_bucket[10m])))
+histogram_quantile(0.99, sum by (le) (rate(networkpulse_worker_queue_residence_seconds_bucket[10m])))
+histogram_quantile(0.99, sum by (le) (rate(networkpulse_worker_batch_processing_seconds_bucket[10m])))
+```
+
+`NetworkPulseWorkerDegraded` and `NetworkPulseWorkerQueueP95High`
+alert rules provide an initial operational baseline, but they do not send
+notifications until an external alert routing/Alertmanager deployment
+is configured. The p95 120-second warning threshold is operator-tunable,
+**not** an independently verified production SLO. Consider event count,
+traffic mix, capacity saturation, sensor timestamp provenance and alert
+materialization before publishing a real end-to-end SLO.
+
+The worker CLI catches SIGTERM/SIGINT by setting a stop event. At the next
+batch boundary, it stops consuming new messages, closes the SQLAlchemy
+engine, Redis connection, and exits. A signal **during** commit/ACK is
+not translated into an exception inside that transaction; the batch can
+complete. Docker `stop_grace_period: 30s` still imposes a hard limit:
+a stalled handler may be killed by SIGKILL; any unacknowledged delivery
+remains pending and is recovered by XAUTOCLAIM on restart. No zero
+downtime or exactly-once transport guarantee is claimed.
+
+The CLI no longer initializes its Redis consumer group before validating
+the approved model release. The producer/collector still initializes
+the group for local streaming work. Internal monitoring must not report
+full readiness from just an HTTP/API or Redis-PING check.
+
+### Production staging acceptance criteria
+
+Use an **operator-authorized staging environment**, real PostgreSQL and
+persistent Redis with appropriately retained AOF, a separately approved
+non-synthetic model and controlled, licensed real sensor logs. Collect
+pre/post queue-depth, pending, DLQ, exporter health, p50/p95/p99 latency,
+SQL transaction errors, container CPU/memory and source-to-alert timing
+over an agreed sustained-traffic duration. Perform graceful SIGTERM,
+force-kill and separately planned database/Redis failover drills. After
+each event reconcile the distinct canonical flow IDs persisted with
+the source corpus, unacknowledged Redis entries, and any operator-approved
+DLQ records. Capture run ID, timestamps, corpus provenance/hash,
+infrastructure specifications, thresholds and observed metrics in an
+immutable report reviewed by an independent operator. CI cannot provide
+these site-specific data or a production SLA certificate.

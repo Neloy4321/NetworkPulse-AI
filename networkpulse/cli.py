@@ -443,19 +443,44 @@ def main(argv: list[str] | None = None) -> int:
         from networkpulse.streaming.redis_streams import FlowStream, connect, process_events
         from networkpulse.streaming.collector import LogCollector
         queue = FlowStream(connect(os.getenv("REDIS_URL", "redis://localhost:6379/0")))
-        queue.initialize()
-        if args.command == "worker":
-            result = process_events(
-                queue, args.consumer, settings=Settings.from_env(),
-                once=args.once, max_stall_seconds=args.max_stall_seconds,
-                retry_backoff_max_seconds=args.retry_backoff_max_seconds,
-            )
-        else:
-            collector = LogCollector(args.path, args.format, args.checkpoint, queue.enqueue)
-            result = collector.poll_once() if args.once else collector.follow()
-        if result is not None:
-            print(json.dumps(result, indent=2))
-        return 0
+        try:
+            if args.command == "worker":
+                import signal
+                from threading import Event
+
+                stopping = Event()
+                previous = {}
+
+                def request_shutdown(_signum, _frame):
+                    # A signal only changes an event. The current DB commit
+                    # and Redis ACK complete before the next loop boundary.
+                    stopping.set()
+
+                for sig in (signal.SIGTERM, signal.SIGINT):
+                    previous[sig] = signal.signal(sig, request_shutdown)
+                try:
+                    port = os.getenv("NETWORKPULSE_WORKER_METRICS_PORT", "")
+                    result = process_events(
+                        queue, args.consumer, settings=Settings.from_env(),
+                        once=args.once, max_stall_seconds=args.max_stall_seconds,
+                        retry_backoff_max_seconds=args.retry_backoff_max_seconds,
+                        stop_requested=stopping.is_set,
+                        metrics_port=int(port) if port else None,
+                    )
+                finally:
+                    for sig, handler in previous.items():
+                        signal.signal(sig, handler)
+            else:
+                queue.initialize()
+                collector = LogCollector(
+                    args.path, args.format, args.checkpoint, queue.enqueue
+                )
+                result = collector.poll_once() if args.once else collector.follow()
+            if result is not None:
+                print(json.dumps(result, indent=2))
+            return 0
+        finally:
+            queue.redis.close()
 
     if args.command == "enrich-offline":
         from itertools import islice

@@ -296,3 +296,62 @@ def test_worker_idle_probe_fails_closed_on_database_outage(monkeypatch, app_sett
     with pytest.raises(ConnectionError, match="postgres outage injected"):
         process_events(EmptyQueue(), "fault-probe", settings=app_settings, once=True)
     assert heartbeats == []
+
+
+@pytest.mark.skipif(not os.getenv("REDIS_TEST_URL"), reason="CI Redis required")
+def test_real_redis_queue_residence_metrics_after_durable_ack():
+    """Only completed XACKs contribute enqueue-to-ACK metrics."""
+    import redis
+    from networkpulse.streaming import worker_metrics
+
+    client = redis.Redis.from_url(os.environ["REDIS_TEST_URL"], decode_responses=True)
+    stream = "networkpulse:ci:slo-ack:" + uuid.uuid4().hex
+    q = FlowStream(client, stream=stream, group="ci", max_backlog=100)
+    event = sample_flows(100, seed=3001)[0].model_dump(mode="json")
+    observed = []
+    try:
+        q.initialize()
+        q.enqueue(event)
+        counts_before = worker_metrics.QUEUE_RESIDENCE_SECONDS.collect()[0].samples
+        initial = next(s.value for s in counts_before if s.name.endswith("_count"))
+        result = q.consume_batch_once(
+            "metrics-ci", lambda records: observed.extend(records),
+            FlowEvent.model_validate, recover=False, block_ms=10,
+            on_committed=lambda ids: worker_metrics.record_acknowledged(client, ids),
+        )
+        assert result["processed"] == 1
+        assert len(observed) == 1
+        assert client.xlen(stream) == 0
+        assert client.xpending(stream, "ci")["pending"] == 0
+        counts_after = worker_metrics.QUEUE_RESIDENCE_SECONDS.collect()[0].samples
+        final = next(s.value for s in counts_after if s.name.endswith("_count"))
+        assert final == initial + 1
+    finally:
+        client.delete(stream, q.dead_letter)
+        client.close()
+
+
+@pytest.mark.skipif(not os.getenv("REDIS_TEST_URL"), reason="CI Redis required")
+def test_telemetry_exception_after_ack_cannot_resurrect_committed_flow():
+    """A scraping/instrumentation failure must not cause a Redis replay."""
+    import redis
+    client = redis.Redis.from_url(os.environ["REDIS_TEST_URL"], decode_responses=True)
+    stream = "networkpulse:ci:observability-isolation:" + uuid.uuid4().hex
+    q = FlowStream(client, stream=stream, group="ci", max_backlog=100)
+    try:
+        q.initialize()
+        q.enqueue(sample_flows(100, seed=3002)[0].model_dump(mode="json"))
+        def failing_observer(_ids):
+            raise RuntimeError("private exporter is unavailable")
+        result = q.consume_batch_once(
+            "metrics-ci", lambda _batch: None,
+            FlowEvent.model_validate, recover=False, block_ms=10,
+            on_committed=failing_observer,
+        )
+        assert result == {"processed": 1, "retried": 0, "dead_lettered": 0}
+        assert client.xlen(stream) == 0
+        assert client.xlen(q.dead_letter) == 0
+        assert client.xpending(stream, "ci")["pending"] == 0
+    finally:
+        client.delete(stream, q.dead_letter)
+        client.close()

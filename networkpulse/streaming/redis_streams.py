@@ -199,6 +199,7 @@ class FlowStream:
         recover: bool = True, block_ms: int = 1000,
         recover_idle_ms: int = 30000,
         on_handler_failure: Callable[[], None] | None = None,
+        on_committed: Callable[[list[str]], None] | None = None,
     ) -> dict:
         """Validate before scoring; one DB commit per valid Redis read batch.
 
@@ -236,6 +237,17 @@ class FlowStream:
             out["retried"] += len(good_ids)
             return out
         self._ack_many(good_ids)
+        # The database is committed and Redis has acknowledged/deleted each
+        # message. Optional telemetry can never turn this into a failed batch.
+        if on_committed is not None:
+            try:
+                on_committed(good_ids)
+            except Exception:
+                # Never expose payloads, Redis IDs or backend credentials.
+                import logging
+                logging.getLogger(__name__).warning(
+                    "stream_post_commit_telemetry_unavailable"
+                )
         out["processed"] += len(good_ids)
         return out
 
@@ -307,7 +319,8 @@ def connect(url: str):
 def process_events(queue: FlowStream, consumer: str, *, settings, once: bool = False,
                    max_stall_seconds: float = 90.0,
                    retry_backoff_max_seconds: float = 4.0,
-                   clock=None, sleeper=None):
+                   clock=None, sleeper=None, stop_requested=None,
+                   metrics_port: int | None = None):
     """Supervised native scoring: preserve pending traffic and fail after stall."""
     from networkpulse.detector import Detector
     from networkpulse.schemas import FlowEvent
@@ -318,6 +331,7 @@ def process_events(queue: FlowStream, consumer: str, *, settings, once: bool = F
     from pathlib import Path
     from time import monotonic, sleep
     from networkpulse.streaming.worker_recovery import WorkerFailureBudget
+    from networkpulse.streaming import worker_metrics
 
     budget = WorkerFailureBudget(
         max_stall_seconds=max_stall_seconds,
@@ -325,6 +339,9 @@ def process_events(queue: FlowStream, consumer: str, *, settings, once: bool = F
     )
     clock = monotonic if clock is None else clock
     sleeper = sleep if sleeper is None else sleeper
+    stop_requested = (lambda: False) if stop_requested is None else stop_requested
+    if metrics_port is not None and not 1024 <= metrics_port <= 65535:
+        raise ValueError("Invalid private worker metrics port")
     from networkpulse.deployment_preflight import require_runtime_release
     require_runtime_release(settings)
     if settings.deployment_mode == "production" and not settings.model_sha256:
@@ -344,22 +361,32 @@ def process_events(queue: FlowStream, consumer: str, *, settings, once: bool = F
     queue.initialize()
     maker = build_sessions(settings.database_url)
     unique_consumer = f"{consumer}:{socket.gethostname()}:{os.getpid()}"
+    # Activate the exporter only after model trust and DB migration validation.
+    if metrics_port is not None:
+        worker_metrics.start_private_exporter(metrics_port)
+    worker_metrics.WORKER_READY.set(0)
 
     def store_batch(events):
         with maker() as session:
             ingest(session, detector, events)
 
     try:
-        while True:
+        while not stop_requested():
             def note_failure():
+                worker_metrics.HANDLER_FAILURES.inc()
+                worker_metrics.WORKER_READY.set(0)
                 budget.record_handler_failure(clock())
 
+            began = clock()
             outcome = queue.consume_batch_once(
                 unique_consumer, store_batch, FlowEvent.model_validate,
                 on_handler_failure=note_failure,
+                on_committed=(lambda ids: worker_metrics.record_acknowledged(
+                    queue.redis, ids)) if metrics_port is not None else None,
             )
+            worker_metrics.record_cycle(outcome, clock() - began)
             if outcome["processed"]:
-                # A committed PostgreSQL batch is actual forward progress.
+                # A completed DB transaction + Redis ACK is forward progress.
                 budget.committed_batch()
             # An empty Redis poll DOES NOT clear a previously failed handler:
             # it might be waiting for XAUTOCLAIM's idle timeout. Neither
@@ -371,15 +398,17 @@ def process_events(queue: FlowStream, consumer: str, *, settings, once: bool = F
                     session.execute(sql_text("SELECT 1"))
             if not budget.degraded and (not outcome["retried"] or outcome["processed"]):
                 mark_success(Path("/tmp/networkpulse-stream-heartbeat.json"), "stream")
+                worker_metrics.WORKER_READY.set(1)
             if once:
                 return outcome
             if any(outcome.values()):
                 # No IPs, flow payloads or credentials in operational logs.
                 print(json.dumps({"worker": "flow", **outcome}), flush=True)
-            if budget.degraded:
+            if budget.degraded and not stop_requested():
                 delay = budget.retry_delay(clock())
                 if delay:
                     sleeper(delay)
                 budget.assert_not_expired(clock())
     finally:
+        worker_metrics.WORKER_READY.set(0)
         maker.kw["bind"].dispose()
