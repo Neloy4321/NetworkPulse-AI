@@ -330,3 +330,22 @@ Planned, **not implemented**: Kafka/Redpanda + ClickHouse, Zeek/Suricata continu
 [GitHub](https://github.com/Neloy4321) · [Portfolio](https://www.supto.me) · [LinkedIn](https://linkedin.com/in/neloy-pramanik-supto-b52677236) · [Email](mailto:neloybbs@gmail.com)
 
 **License:** MIT. **Security:** [Responsible use and reporting](SECURITY.md).
+
+## Reliability and explainability improvements (October 2026)
+
+- Benign-only calibration diagnostics and internal chronological holdout
+  confusion matrix, observed FPR, one-sided Wilson uncertainty bound and
+  label-aware protocol/sensor/port-class error slices.
+- Optional bounded Isolation Forest **score-sensitivity** explanation:
+  `networkpulse explain-model --model data/model.joblib --data data/authorized-flows.jsonl`.
+  This is a marginal perturbation diagnostic **not SHAP nor causal attribution**.
+- Drift PSI reports require meaningful windows (30+ events) and can compute
+  labeled retrospective FPR when trusted ground truth exists.
+- Model registration optionally enforces a **held-out FPR confidence upper
+  bound**, while `model-registry promote --production --evidence ...`
+  requires declared independent-site/sensor validation and human approval.
+  JSON receipts do **not** cryptographically prove these declarations.
+- The project remains **not independently production validated**; these
+  protections do not change the measured real held-out false-positive rate.
+  See [model lifecycle](docs/MODEL_LIFECYCLE.md) and
+  [model card](docs/MODEL_CARD.md).

@@ -84,3 +84,14 @@ real-source-trained model to the deterministic synthetic training regime.
 See [native score evidence](REAL_DATA_RESULTS.md#native-networkpulse-detector-evaluation--real-unsw-capture).
 This does **not** complete production field-validation requirements, and
 the high benign FPR prevents an operational readiness claim.
+
+
+## Reliability/explainability engineering milestone (October 2026)
+
+Diagnostic calibration profiles, Wilson FPR bounds, label-aware slices, bounded
+numeric IF score sensitivities, stricter PSI window validation, an optional
+registry FPR gate and an explicitly opt-in independent-site evidence receipt
+policy have been added with synthetic fixture regression tests. Demo model
+behavior and artifact format remain backwards readable; sensitivity requires
+newly trained metadata. No deployed model was promoted. Independent-site,
+signed evidence and operational false-alert targets remain external gates.

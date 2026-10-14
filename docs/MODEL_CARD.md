@@ -59,3 +59,31 @@ Command: `networkpulse bootstrap --count 1300 --seed 42` (locally executed Octob
 ## Reproducibility and artifact safety
 
 Model artifacts are not checked into Git because they can be regenerated. Joblib artifacts are pickle-based: **never load untrusted user-provided artifacts**. The detector checks the schema feature version after deserialization, but that check is not a sandbox or signature verification.
+
+## October 2026 reliability instrumentation
+
+The default Isolation Forest remains trained with a **benign calibration
+quantile** and used for human triage, not automated blocking. Trained models now
+store benign numeric feature medians for optional bounded one-coordinate
+sensitivity diagnostics, their benign calibration score distribution summary,
+and *internal* held-out group-level uncertainty.
+
+Metrics additionally include FPR, 95% one-sided Wilson upper FPR bound,
+confusion matrix, benign and attack counts, alert fraction, and protocol,
+source and port-class slices. Wilson's interval assumes an independent
+binomial approximation; correlated flows and distribution drift can invalidate
+interpretation as a target-site false alert budget. Withheld low-count group
+rates do not prove no false positives.
+
+**Observed external data milestone:** the canonical native detector trained on
+early UNSW raw flow data yielded a **12.61% benign FPR** and **73.53% F1** on a
+sampled later capture. A new deterministic synthetic-trained instance yielded
+**67.90% benign FPR** on the same 1,288 rows. These numbers are **before** this
+reliability-instrumentation update; no fresh claim of model accuracy
+improvement is made just by adding diagnostics. See
+[real-data report](REAL_DATA_RESULTS.md#native-networkpulse-detector-evaluation--real-unsw-capture).
+
+**Release posture:** fail-closed optional registration FPR gate, verified local
+artifact checksum and operator-declared stronger production promotion policy
+do not replace an independently verified deployment acceptance test or solve
+unsafe false alarm rates. No real model was automatically deployed.
