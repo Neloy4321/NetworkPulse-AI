@@ -185,7 +185,7 @@ def main(argv: list[str] | None = None) -> int:
     registry = cmd.add_parser("model-registry", help="Register, gate, promote, shadow and roll back trusted models")
     registry.add_argument("action", choices=[
         "register", "status", "promote", "rollback", "shadow",
-        "verify-active", "recover-interrupted",
+        "verify-active", "preflight", "recover-interrupted",
     ])
     registry.add_argument("--name", help="Immutable candidate name")
     registry.add_argument("--file", type=Path, help="Locally trained, trusted model artifact")
@@ -289,6 +289,12 @@ def main(argv: list[str] | None = None) -> int:
             result = managed.status()
         elif args.action == "verify-active":
             result = managed.verify_active(args.active)
+        elif args.action == "preflight":
+            from networkpulse.deployment_preflight import verify_deployment_model
+            result = verify_deployment_model(
+                model_path=args.active, expected_sha256=args.expected_sha256
+                or os.getenv("MODEL_SHA256", ""), registry_root=args.root,
+            )
         elif args.action == "recover-interrupted":
             if not args.confirm or not args.expected_sha256:
                 parser.error("recover-interrupted requires --confirm and --expected-sha256")
@@ -353,6 +359,8 @@ def main(argv: list[str] | None = None) -> int:
                         for index in reversed(range(args.lookback_hours))
                     ]
                 for start, end in windows:
+                    from networkpulse.deployment_preflight import require_runtime_release
+                    require_runtime_release(settings)
                     with maker() as session:
                         result = run_monitor(
                             session, model_path=settings.model_path,

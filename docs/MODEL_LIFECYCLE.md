@@ -250,3 +250,43 @@ written by HTTP and Redis Streams ingestion.
   UNSW-NB15 replay demonstrates identical runtime data-to-evidence plumbing;
   it does **not** prove real-world detection accuracy or independent network
   generalization.
+
+### Deployment-to-runtime preflight (single node)
+
+Production API startup and the production Compose streaming/MLOps processes
+now verify the actual deployed model SHA-256 against BOTH the pinned
+`MODEL_SHA256` and the registry's active candidate before loading/scoring.
+They refuse missing registry state, unresolved release journal, synthetic
+candidate records, tampered registry artifacts, incompatible feature
+contracts or missing signed production approval history (NP-REL-006).
+The preflight reads the operator-controlled registry's recorded signature
+verification result; it does not revalidate the offline signature or claim
+the assertions in the evidence are factually true. Set `NETWORKPULSE_MODEL_REGISTRY_ROOT=/app/data/registry` on
+every scoring and MLOps service, with the same `model_data` volume mounted.
+The production Compose TLS overlay configures this for API, streaming worker
+and MLOps worker.
+
+After an independently approved, signed production release is installed via
+the controlled maintenance procedure above, the operator can run a read-only
+preflight before starting processes:
+
+```bash
+networkpulse model-registry preflight \
+  --root /app/data/registry --active /app/data/model.joblib \
+  --expected-sha256 '<operator-verified-active-model-sha256>'
+```
+
+Failure codes: `NP-REL-001` missing/invalid pin, `NP-REL-002` missing
+registry root, `NP-REL-003` registry/pin disagreement, `NP-REL-004`
+incompatible feature contract, `NP-REL-005` synthetic/demo record,
+and `NP-REL-006` missing recorded signed production approval.
+Registry integrity/journal errors fail closed as before. This does not
+authorize an unsigned release; the registry must already reflect the signed,
+operator-approved deployment. Registry files and model artifacts must be
+protected against unauthorized local filesystem writes.
+
+The consistency check is read-only and single-node. A rolling,
+multi-replica upgrade, in-place model replacement while requests are live,
+external health-gated canary, trust-store distribution and independent site
+validation are NOT implemented by this gate. Always quiesce processes for
+release changes, restart all model consumers together and verify health.
