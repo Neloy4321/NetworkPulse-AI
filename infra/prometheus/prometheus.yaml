@@ -7,3 +7,9 @@ scrape_configs:
     metrics_path: /metrics
     static_configs:
       - targets: ['api:8000']
+  # Optional streaming profile; will be down when worker is not deployed.
+  # No host port or public origin exposure is configured.
+  - job_name: networkpulse-worker
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['worker:9101']
