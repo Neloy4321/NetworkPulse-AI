@@ -226,3 +226,90 @@ def test_burst_pipeline_survives_transient_commit_failure_and_drains_exactly_onc
         maker.kw["bind"].dispose()
         client.delete(stream, queue.dead_letter)
         client.close()
+
+
+@pytest.mark.skipif(
+    not (os.getenv("REDIS_TEST_URL") and os.getenv("PG_TEST_DATABASE_URL")),
+    reason="Isolated PostgreSQL and Redis services required",
+)
+def test_sustained_worker_failure_stops_without_ack_or_dlq_then_recovers(tmp_path, monkeypatch):
+    """Real Redis/Postgres state with a failing transaction handler and restart.
+
+    Simulates a prolonged service exception without destroying the shared CI DB
+    service. Failure duration is virtual; queue and SQL operations are real.
+    """
+    import redis
+    from networkpulse.schemas import FlowEvent
+    from networkpulse.service import ingest as actual_ingest
+    from networkpulse.storage import build_sessions
+    from networkpulse.streaming.worker_recovery import WorkerStalledError
+
+    db_url = os.environ["PG_TEST_DATABASE_URL"]
+    upgrade_database(db_url)
+    model = train(sample_flows(310, seed=2820), seed=2820)
+    model_file = tmp_path / "signed-independent-not-required-in-dev.joblib"
+    model.save(model_file)
+    settings = Settings(
+        database_url=db_url, model_path=model_file,
+        api_key="local-ci-key-strong-enough",
+    )
+    events = sample_flows(150, seed=2821)[:30]
+    client = redis.Redis.from_url(
+        os.environ["REDIS_TEST_URL"], decode_responses=True,
+    )
+    stream = "networkpulse:ci:supervised-recovery:" + uuid.uuid4().hex
+    queue = FlowStream(client, stream=stream, group="ci", max_backlog=100)
+    maker = build_sessions(db_url)
+    from networkpulse import service
+    def unavailable(_session, _model, _events):
+        raise ConnectionError("simulated transient PostgreSQL handler outage")
+
+    ticks = [0.]
+    def advance(seconds):
+        ticks[0] += max(seconds, 4)
+
+    try:
+        queue.initialize()
+        for item in events:
+            queue.enqueue(item.model_dump(mode="json"))
+        monkeypatch.setattr(service, "ingest", unavailable)
+        with pytest.raises(WorkerStalledError, match="stalled"):
+            process_events(
+                queue, "ci-unavailable", settings=settings,
+                clock=lambda: ticks[0], sleeper=advance,
+                max_stall_seconds=30, retry_backoff_max_seconds=2,
+            )
+        # The supervisor MUST NOT ACK, delete, poison-DLQ or truncate data.
+        assert client.xlen(stream) == len(events)
+        assert client.xlen(queue.dead_letter) == 0
+        assert client.xpending(stream, "ci")["pending"] > 0
+
+        monkeypatch.setattr(service, "ingest", actual_ingest)
+        def store(batch):
+            with maker() as session:
+                actual_ingest(session, model, batch)
+
+        committed = 0
+        for _ in range(10):
+            step = queue.consume_batch_once(
+                "ci-restarted-worker", store, FlowEvent.model_validate,
+                recover=True, recover_idle_ms=0, block_ms=5,
+            )
+            assert step["retried"] == step["dead_lettered"] == 0
+            committed += step["processed"]
+            if committed == len(events):
+                break
+        assert committed == len(events)
+        assert client.xlen(stream) == 0
+        assert client.xpending(stream, "ci")["pending"] == 0
+        with maker() as session:
+            found = set(session.scalars(
+                select(NetworkEvent.id).where(
+                    NetworkEvent.id.in_([event.key() for event in events])
+                )
+            ))
+            assert found == {event.key() for event in events}
+    finally:
+        maker.kw["bind"].dispose()
+        client.delete(stream, queue.dead_letter)
+        client.close()
