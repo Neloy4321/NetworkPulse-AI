@@ -32,7 +32,9 @@ services:
     profiles: ["streaming"]
     restart: unless-stopped
     stop_grace_period: 30s
-    command: ["networkpulse", "worker", "--consumer", "compose-worker-1"]
+    command: ["networkpulse", "worker", "--consumer", "compose-worker-1",
+              "--max-stall-seconds", "${NETWORKPULSE_WORKER_MAX_STALL_SECONDS:-90}",
+              "--retry-backoff-max-seconds", "${NETWORKPULSE_WORKER_RETRY_BACKOFF_MAX_SECONDS:-4}"]
     # Both a recent successful processing cycle and live Redis are required;
     # Redis PING alone cannot detect a stuck DB/model worker.
     healthcheck:
