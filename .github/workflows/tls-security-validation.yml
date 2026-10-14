@@ -1,0 +1,48 @@
+name: TLS and security deployment validation
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'infra/Caddyfile'
+      - 'compose.yaml'
+      - 'compose.tls.yaml'
+      - '.github/workflows/tls-security-validation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  gateway:
+    runs-on: ubuntu-latest
+    env:
+      POSTGRES_PASSWORD: ci-only-unused-strong-value
+      NETWORKPULSE_API_KEY: ci-only-unused-strong-value
+      SECURITY_REDIS_PASSWORD: 0123456789abcdef0123456789abcdef
+      NETWORKPULSE_DOMAIN: soc.example.test
+      NETWORKPULSE_OIDC_ISSUER: https://issuer.example.test/realm
+      NETWORKPULSE_OIDC_AUDIENCE: networkpulse-api
+      NETWORKPULSE_OIDC_JWKS_URL: https://issuer.example.test/jwks
+      NETWORKPULSE_OIDC_AUTH_URL: https://issuer.example.test/authorize
+      NETWORKPULSE_OIDC_TOKEN_URL: https://issuer.example.test/token
+      NETWORKPULSE_OIDC_CLIENT_ID: networkpulse-public
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate merged Docker Compose
+        run: docker compose -f compose.yaml -f compose.tls.yaml config -q
+      - name: Validate pinned Caddy reverse proxy
+        run: |
+          docker run --rm \
+            -e NETWORKPULSE_DOMAIN="$NETWORKPULSE_DOMAIN" \
+            -v "$PWD/infra/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            caddy:2.11.7 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+      - name: Verify no public origin API port in base Compose
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          compose = Path("compose.yaml").read_text()
+          assert '"127.0.0.1:8000:8000"' in compose
+          config = Path("compose.tls.yaml").read_text()
+          assert "NETWORKPULSE_DEPLOYMENT: production" in config
+          assert "NETWORKPULSE_BROWSER_OIDC:" in config
+          assert "security-redis:" in config
+          print("Production overlay isolated; only Caddy binds public 80/443")
+          PY
