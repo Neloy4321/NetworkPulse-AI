@@ -29,7 +29,7 @@ def main(argv: list[str] | None = None) -> int:
     cmd = parser.add_subparsers(dest="command", required=True)
 
     db = cmd.add_parser("db", help="Manage schema migrations")
-    db.add_argument("action", choices=["upgrade", "status", "backup"])
+    db.add_argument("action", choices=["upgrade", "status", "check", "backup"])
     db.add_argument("--output", type=Path, help="Backup destination (SQLite only)")
 
     boot = cmd.add_parser("bootstrap", help="Train on a seeded synthetic demo, seed demo events")
@@ -199,6 +199,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "mlops-monitor":
         from datetime import datetime, timedelta
+        from networkpulse.ops_health import mark_success
         from networkpulse.mlops_monitor import completed_hour, run_monitor
         settings = Settings.from_env()
         expected = args.expected_sha256 or settings.model_sha256
@@ -230,6 +231,9 @@ def main(argv: list[str] | None = None) -> int:
                             max_rows=args.max_rows,
                         )
                     print(json.dumps(result), flush=True)
+                # A completed full monitoring cycle is required before
+                # advertising health; a failed window never updates it.
+                mark_success(Path("/tmp/networkpulse-mlops-heartbeat.json"), "mlops")
                 if args.once:
                     break
                 time.sleep(args.interval)
@@ -239,6 +243,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "behavior-worker":
         from datetime import datetime
+        from networkpulse.ops_health import mark_success
         from networkpulse.behavior_cases import materialize_findings
         if not 5 <= args.interval <= 3600:
             parser.error("behavior-worker interval must be 5..3600 seconds")
@@ -257,6 +262,7 @@ def main(argv: list[str] | None = None) -> int:
                         burst_per_minute=args.burst_per_minute,
                     )
                 print(json.dumps(outcome), flush=True)
+                mark_success(Path("/tmp/networkpulse-behavior-heartbeat.json"), "behavior")
                 if args.once:
                     break
                 time.sleep(args.interval)
@@ -409,6 +415,8 @@ def main(argv: list[str] | None = None) -> int:
         else:
             result = database_version(url)
         print(json.dumps(result, indent=2))
+        if args.action == "check" and not result.get("ready", False):
+            return 1  # Deployment must fail closed on a pending schema migration.
         return 0
 
     settings = Settings.from_env()

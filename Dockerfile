@@ -24,4 +24,6 @@ USER networkpulse
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready',timeout=4)"
-CMD ["sh", "-ec", "python -m networkpulse.cli db upgrade; if [ \"${NETWORKPULSE_DEPLOYMENT:-development}\" = production ]; then test -s /app/data/model.joblib || { echo \"Production requires a prevalidated model\"; exit 1; }; test -n \"${MODEL_SHA256:-}\" || { echo \"Production requires MODEL_SHA256\"; exit 1; }; else python -m networkpulse.cli bootstrap; fi; exec uvicorn networkpulse.api:create_app --factory --host 0.0.0.0 --port 8000 --no-access-log"]
+# Production never mutates DB schema on API startup. An operator runs the
+# migration against a verified backup, then the API checks the revision.
+CMD ["sh", "-ec", "if [ \"${NETWORKPULSE_DEPLOYMENT:-development}\" = production ]; then python -m networkpulse.cli db check; test -s /app/data/model.joblib || { echo \"Production requires a prevalidated model\"; exit 1; }; test -n \"${MODEL_SHA256:-}\" || { echo \"Production requires MODEL_SHA256\"; exit 1; }; else python -m networkpulse.cli db upgrade; python -m networkpulse.cli bootstrap; fi; exec uvicorn networkpulse.api:create_app --factory --host 0.0.0.0 --port 8000 --no-access-log"]
