@@ -132,19 +132,21 @@ class LogCollector:
         source means continuity cannot be established; refuse a silent reset.
         """
         try:
-            entries = list(os.scandir(self.path.parent))
+            with os.scandir(self.path.parent) as entries:
+                for count, entry in enumerate(entries, 1):
+                    if count > MAX_ROTATED_FILES:
+                        raise ContinuityError(
+                            "Rotation directory exceeds bounded scan capacity"
+                        )
+                    try:
+                        if entry.is_file(follow_symlinks=False):
+                            info = entry.stat(follow_symlinks=False)
+                            if _identity(info) == expected:
+                                return Path(entry.path)
+                    except FileNotFoundError:
+                        continue
         except OSError as exc:
             raise ContinuityError("Cannot inspect sensor rotation directory") from exc
-        if len(entries) > MAX_ROTATED_FILES:
-            raise ContinuityError("Rotation directory exceeds bounded scan capacity")
-        for entry in entries:
-            try:
-                if entry.is_file(follow_symlinks=False):
-                    info = entry.stat(follow_symlinks=False)
-                    if _identity(info) == expected:
-                        return Path(entry.path)
-            except FileNotFoundError:
-                continue
         raise ContinuityError(
             "Previous sensor inode is unavailable after rotation; do not skip unread flows"
         )
