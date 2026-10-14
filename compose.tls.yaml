@@ -35,7 +35,7 @@ services:
       NETWORKPULSE_GLOBAL_RATE_PER_MINUTE: ${NETWORKPULSE_GLOBAL_RATE_PER_MINUTE:-6000}
       MUTATION_RATE_PER_MINUTE: ${MUTATION_RATE_PER_MINUTE:-120}
   caddy:
-    image: caddy:2.8.4
+    image: caddy:2.11.7
     restart: unless-stopped
     environment:
       NETWORKPULSE_DOMAIN: ${NETWORKPULSE_DOMAIN:?Set public DNS hostname}
