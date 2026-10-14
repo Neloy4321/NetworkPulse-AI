@@ -1,22 +1,54 @@
-# Optional TLS staging example. DO NOT use without working external IdP and firewall.
+# Opt-in public TLS/SSO overlay. Set secrets locally, never in Git.
+# Start: docker compose -f compose.yaml -f compose.tls.yaml up -d --build
 services:
-  api:
+  security-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
     environment:
+      SECURITY_REDIS_PASSWORD: ${SECURITY_REDIS_PASSWORD:?Set an independent Redis secret}
+    command:
+      - sh
+      - -c
+      - exec redis-server --save '' --appendonly no --requirepass "$$SECURITY_REDIS_PASSWORD"
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$SECURITY_REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks: [internal]
+  api:
+    depends_on:
+      security-redis:
+        condition: service_healthy
+    environment:
+      NETWORKPULSE_DEPLOYMENT: production
       NETWORKPULSE_AUTH_MODE: oidc
-      NETWORKPULSE_OIDC_ISSUER: ${NETWORKPULSE_OIDC_ISSUER:?Required external identity issuer}
-      NETWORKPULSE_OIDC_AUDIENCE: ${NETWORKPULSE_OIDC_AUDIENCE:?Required audience}
-      NETWORKPULSE_OIDC_JWKS_URL: ${NETWORKPULSE_OIDC_JWKS_URL:?Required JWKS URL}
+      NETWORKPULSE_BROWSER_OIDC: "true"
+      NETWORKPULSE_OIDC_ISSUER: ${NETWORKPULSE_OIDC_ISSUER:?Set trusted HTTPS issuer}
+      NETWORKPULSE_OIDC_AUDIENCE: ${NETWORKPULSE_OIDC_AUDIENCE:?Set API audience}
+      NETWORKPULSE_OIDC_JWKS_URL: ${NETWORKPULSE_OIDC_JWKS_URL:?Set trusted HTTPS JWKS URL}
+      NETWORKPULSE_OIDC_AUTH_URL: ${NETWORKPULSE_OIDC_AUTH_URL:?Set HTTPS authorize endpoint}
+      NETWORKPULSE_OIDC_TOKEN_URL: ${NETWORKPULSE_OIDC_TOKEN_URL:?Set HTTPS token endpoint}
+      NETWORKPULSE_OIDC_CLIENT_ID: ${NETWORKPULSE_OIDC_CLIENT_ID:?Set public OAuth client ID}
+      NETWORKPULSE_PUBLIC_ORIGIN: https://${NETWORKPULSE_DOMAIN:?Set DNS hostname}
+      NETWORKPULSE_SECURITY_REDIS_URL: redis://:${SECURITY_REDIS_PASSWORD:?Set Redis secret}@security-redis:6379/0
+      NETWORKPULSE_GLOBAL_RATE_PER_MINUTE: ${NETWORKPULSE_GLOBAL_RATE_PER_MINUTE:-6000}
+      MUTATION_RATE_PER_MINUTE: ${MUTATION_RATE_PER_MINUTE:-120}
   caddy:
     image: caddy:2.8.4
     restart: unless-stopped
     environment:
-      NETWORKPULSE_DOMAIN: ${NETWORKPULSE_DOMAIN:?Required publicly resolving domain}
+      NETWORKPULSE_DOMAIN: ${NETWORKPULSE_DOMAIN:?Set public DNS hostname}
     volumes:
       - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    depends_on: [api]
-    ports: ['80:80', '443:443']
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
     networks: [internal]
 volumes:
   caddy_data:

@@ -1,11 +1,21 @@
-# Example external TLS gateway, *only* with NETWORKPULSE_AUTH_MODE=oidc.
-# Valid DNS, HTTPS certificates, issuer/audience/JWKS and platform firewall required.
+# HTTPS-only public entrypoint. DNS and publicly reachable 80/443 required.
+# The API listens on the private Docker network; never publish it publicly.
 {$NETWORKPULSE_DOMAIN} {
     encode zstd gzip
+    request_body {
+        max_size 1MB
+    }
     header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        Strict-Transport-Security "max-age=31536000"
         X-Content-Type-Options "nosniff"
         Referrer-Policy "no-referrer"
+        X-Frame-Options "DENY"
+        -Server
     }
-    reverse_proxy api:8000
+    @adminPrivate path /metrics /docs /redoc /openapi.json
+    respond @adminPrivate 404
+    reverse_proxy api:8000 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+    }
 }
