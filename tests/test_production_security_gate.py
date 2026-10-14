@@ -76,7 +76,7 @@ def test_local_development_keeps_documentation(client):
     assert client.get("/openapi.json").status_code == 200
 
 
-def test_production_rejects_synthetic_model_even_if_sha_matches(monkeypatch, app_settings):
+def test_production_rejects_synthetic_model_even_if_sha_matches(monkeypatch, app_settings, tmp_path):
     """A checksum does not make a seeded demo safe to serve in production."""
     from networkpulse.model_registry import sha256
 
@@ -98,6 +98,15 @@ def test_production_rejects_synthetic_model_even_if_sha_matches(monkeypatch, app
         oidc_token_url="https://issuer.example.test/token",
         oidc_client_id="public-client", public_origin="https://soc.example.test",
     )
+    # The synthetic model is registered as a local candidate, but a matching
+    # digest still must never authorize a production runtime.
+    from networkpulse.model_registry import ModelRegistry
+    registry = ModelRegistry(tmp_path / "synthetic-registry")
+    registry.register("synthetic-ci", app_settings.model_path)
+    deployed = tmp_path / "candidate-for-refusal.joblib"
+    registry.promote("synthetic-ci", deployed)
+    monkeypatch.setenv("NETWORKPULSE_MODEL_REGISTRY_ROOT", str(registry.root))
+    settings = replace(settings, model_path=deployed, model_sha256=sha256(deployed))
     with pytest.raises(ValueError, match="synthetic/demo"):
         create_app(settings)
 
