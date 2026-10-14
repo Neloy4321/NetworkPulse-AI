@@ -169,6 +169,10 @@ def main(argv: list[str] | None = None) -> int:
     worker = cmd.add_parser("worker", help="Consume Redis Streams and commit scored flows")
     worker.add_argument("--consumer", default="networkpulse-worker-1")
     worker.add_argument("--once", action="store_true")
+    worker.add_argument("--max-stall-seconds", type=float, default=90.0,
+                        help="Fail closed after a handler outage with no committed progress")
+    worker.add_argument("--retry-backoff-max-seconds", type=float, default=4.0,
+                        help="Maximum bounded delay before retrying failed batches")
 
     explain_cmd = cmd.add_parser("explain-model", help="Bounded model-score sensitivity audit")
     explain_cmd.add_argument("--data", type=Path, required=True)
@@ -441,7 +445,11 @@ def main(argv: list[str] | None = None) -> int:
         queue = FlowStream(connect(os.getenv("REDIS_URL", "redis://localhost:6379/0")))
         queue.initialize()
         if args.command == "worker":
-            result = process_events(queue, args.consumer, settings=Settings.from_env(), once=args.once)
+            result = process_events(
+                queue, args.consumer, settings=Settings.from_env(),
+                once=args.once, max_stall_seconds=args.max_stall_seconds,
+                retry_backoff_max_seconds=args.retry_backoff_max_seconds,
+            )
         else:
             collector = LogCollector(args.path, args.format, args.checkpoint, queue.enqueue)
             result = collector.poll_once() if args.once else collector.follow()
