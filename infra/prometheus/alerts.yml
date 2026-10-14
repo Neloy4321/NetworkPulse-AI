@@ -34,6 +34,22 @@ groups:
         annotations:
           summary: "Flows waiting in Redis without a worker consumer group"
           description: "Start streaming workers or investigate group loss before backlog grows."
+      - alert: NetworkPulseWorkerDegraded
+        expr: networkpulse_worker_healthy{job="networkpulse-worker"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis worker cannot report a healthy processing cycle"
+          description: "Check pending flow age, PostgreSQL and model release; metric is exported by the streaming worker only."
+      - alert: NetworkPulseWorkerQueueP95High
+        expr: histogram_quantile(0.95, sum by (le) (rate(networkpulse_worker_queue_residence_seconds_bucket{job="networkpulse-worker"}[10m]))) > 120
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Worker Redis enqueue-to-ACK p95 exceeds 120 seconds"
+          description: "Investigate consumer saturation, DB latency and accumulated backlog; 120 seconds is a tunable starting threshold, not a certified SLO."
       - alert: NetworkPulseRedisConsumerLagHigh
         expr: networkpulse_stream_lag > 100
         for: 5m
