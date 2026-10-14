@@ -35,6 +35,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         raise ValueError("Production API requires OIDC access control")
     if settings.deployment_mode == "production" and not settings.security_redis_url:
         raise ValueError("Production API requires Redis-backed security")
+    if settings.browser_oidc_enabled and settings.auth_mode != "oidc":
+        raise ValueError("Browser login requires OIDC mode")
+    if settings.deployment_mode == "production":
+        if not settings.browser_oidc_enabled:
+            raise ValueError("Production API requires browser OIDC login")
+        if not settings.model_sha256 or not settings.model_path.is_file():
+            raise ValueError("Production API requires checksum-pinned trusted model")
     redis_client = None
     distributed_limiter = None
     if settings.security_redis_url:
