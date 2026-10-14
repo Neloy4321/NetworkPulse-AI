@@ -14,6 +14,8 @@ from sklearn.metrics import average_precision_score, precision_recall_fscore_sup
 
 from networkpulse.features import FEATURE_VERSION, event_features, explain
 from networkpulse.drift import make_reference
+from networkpulse.reliability import (calibration_diagnostics, confusion_profile,
+                                      reliability_slices)
 from networkpulse.schemas import FlowEvent
 
 
@@ -49,6 +51,49 @@ class Detector:
             )
             for score, event in zip(scores, events)
         ]
+
+    def sensitivity_explanations(self, events: list[FlowEvent], *, top_k: int = 3) -> list[dict]:
+        """Bounded model-score sensitivity, not causal/SHAP explanations.
+
+        Each numeric coordinate is independently replaced by its benign-fit
+        median while keeping other fields fixed. Correlations are not preserved;
+        interpret only as a what-if sensitivity diagnostic, not feature proof.
+        """
+        if not 1 <= top_k <= 8 or len(events) > 25:
+            raise ValueError("explanations allow top_k=1..8 and up to 25 events")
+        if not events:
+            return []
+        medians = self.metadata.get("benign_feature_medians")
+        if not isinstance(medians, dict):
+            raise ValueError("model predates sensitivity baselines; retrain locally")
+        x = self.vectorizer.transform([event_features(e) for e in events])
+        base_scores = -self.estimator.decision_function(x)
+        names = list(self.vectorizer.feature_names_)
+        selected = [(idx, name) for idx, name in enumerate(names)
+                    if name in medians and not name.startswith(("proto=", "state="))]
+        contributions = []
+        for idx, name in selected:
+            altered = x.copy()
+            altered[:, idx] = float(medians[name])
+            modified_scores = -self.estimator.decision_function(altered)
+            contributions.append((name, base_scores - modified_scores))
+        reports = []
+        for row_idx in range(len(events)):
+            items = sorted(((name, round(float(diff[row_idx]), 6))
+                            for name, diff in contributions),
+                           key=lambda pair: (-pair[1], pair[0]))
+            reports.append({
+                "event_index": row_idx,
+                "anomaly_score": round(float(base_scores[row_idx]), 6),
+                "sensitivity_type": "one_feature_replaced_by_benign_training_median",
+                "increasing_anomaly_score": [
+                    {"feature": key, "score_delta": value}
+                    for key, value in items if value > 0
+                ][:top_k],
+                "warning": "Not SHAP, feature importance, probability or causal attribution; "
+                           "off-manifold individual substitutions may be unrealistic.",
+            })
+        return reports
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -108,6 +153,12 @@ def train(
             "holdout_count": len(holdout), "holdout_first": holdout[0].timestamp.isoformat(),
             "feature_count": features.shape[1],
             "drift_baseline": make_reference(features),
+            "benign_feature_medians": {
+                name: float(np.median(features[:, index]))
+                for index, name in enumerate(encoder.feature_names_)
+                if not name.startswith(("proto=", "state="))
+            },
+            "calibration_diagnostics": calibration_diagnostics(scores),
         },
     )
     if all(e.label is not None for e in holdout):
@@ -127,6 +178,12 @@ def train(
         if len(np.unique(y_true)) == 2:
             metrics["roc_auc"] = round(float(roc_auc_score(y_true, [x.anomaly_score for x in measured])), 4)
             metrics["average_precision"] = round(float(average_precision_score(y_true, [x.anomaly_score for x in measured])), 4)
+        metrics.update(confusion_profile(y_true, y_pred))
+        metrics["slices"] = reliability_slices(holdout, measured)["slices"]
+        metrics["evaluation_warning"] = (
+            "Internal chronological holdout, not independent network/site validation; "
+            "confidence bound assumes independent labeled samples."
+        )
         detector.metadata["metrics"] = metrics
     else:
         detector.metadata["metrics"] = None
