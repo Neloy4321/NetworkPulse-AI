@@ -146,6 +146,16 @@ def main(argv: list[str] | None = None) -> int:
     monitor.add_argument("--start", help="ISO 8601 UTC start for operator-controlled backfill")
     monitor.add_argument("--end", help="ISO 8601 UTC end for operator-controlled backfill")
 
+    dlq = cmd.add_parser("stream-dlq", help="Inspect or explicitly replay Redis poison flows")
+    dlq.add_argument("action", choices=["inspect", "replay"])
+    dlq.add_argument("--id", help="Exact DLQ Redis entry ID for one replay")
+    dlq.add_argument("--approved-sha256", help="Operator-reviewed SHA-256 of event payload")
+    dlq.add_argument("--confirm", action="store_true",
+                     help="Explicit operator authorization; required for replay")
+    dlq.add_argument("--limit", type=int, default=30)
+    dlq.add_argument("--redis-url", default=None)
+    dlq.add_argument("--max-backlog", type=int, default=50000)
+
     worker = cmd.add_parser("worker", help="Consume Redis Streams and commit scored flows")
     worker.add_argument("--consumer", default="networkpulse-worker-1")
     worker.add_argument("--once", action="store_true")
@@ -354,6 +364,27 @@ def main(argv: list[str] | None = None) -> int:
                 time.sleep(args.interval)
         finally:
             maker.kw["bind"].dispose()
+        return 0
+
+    if args.command == "stream-dlq":
+        from networkpulse.streaming.redis_streams import FlowStream, connect
+        queue = FlowStream(
+            connect(args.redis_url or os.getenv("REDIS_URL", "redis://localhost:6379/0")),
+            max_backlog=args.max_backlog,
+        )
+        try:
+            if args.action == "inspect":
+                result = queue.inspect_dead_letter(count=args.limit)
+            else:
+                if not args.confirm or not args.id or not args.approved_sha256:
+                    parser.error("replay requires --confirm, --id and --approved-sha256")
+                result = queue.replay_dead_letter(
+                    args.id, expected_event_sha256=args.approved_sha256,
+                    allow_replay=True,
+                )
+        finally:
+            queue.redis.close()
+        print(json.dumps(result, indent=2))
         return 0
 
     if args.command in {"collect", "worker"}:

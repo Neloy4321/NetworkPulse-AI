@@ -15,6 +15,9 @@ on:
       - 'networkpulse/mlops_monitor.py'
       - 'networkpulse/drift.py'
       - 'networkpulse/model_registry.py'
+      - 'networkpulse/streaming/redis_streams.py'
+      - 'tests/test_stream_resilience.py'
+      - 'tests/test_stream_worker_postgres_e2e.py'
       - 'networkpulse/training_release.py'
       - 'networkpulse/cli.py'
       - 'tests/test_training_release.py'
@@ -34,6 +37,9 @@ on:
       - 'networkpulse/mlops_monitor.py'
       - 'networkpulse/drift.py'
       - 'networkpulse/model_registry.py'
+      - 'networkpulse/streaming/redis_streams.py'
+      - 'tests/test_stream_resilience.py'
+      - 'tests/test_stream_worker_postgres_e2e.py'
       - 'networkpulse/training_release.py'
       - 'networkpulse/cli.py'
       - 'tests/test_training_release.py'
@@ -45,6 +51,18 @@ jobs:
   native-real-data:
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      REDIS_TEST_URL: redis://127.0.0.1:6379/4
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -52,7 +70,7 @@ jobs:
           python-version: '3.12'
           cache: pip
       - name: Install dependencies
-        run: python -m pip install -e . 'gdown>=5.2,<6'
+        run: python -m pip install -e '.[streaming]' 'gdown>=5.2,<6'
       - name: Download authorized research dataset to ephemeral runner
         run: |
           python - <<'PY'

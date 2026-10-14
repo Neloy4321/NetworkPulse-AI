@@ -12,7 +12,7 @@ import tempfile
 import time
 from pathlib import Path
 
-ROLES = {"behavior", "mlops"}
+ROLES = {"behavior", "mlops", "stream"}
 
 
 def mark_success(path: Path, role: str) -> None:

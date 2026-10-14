@@ -31,15 +31,14 @@ services:
     build: .
     profiles: ["streaming"]
     command: ["networkpulse", "worker", "--consumer", "compose-worker-1"]
-    # Override the API image's HTTP healthcheck: this worker has no HTTP server.
-    # Docker already marks the container stopped if the worker process exits;
-    # this additional check verifies its Redis dependency is reachable.
+    # Both a recent successful processing cycle and live Redis are required;
+    # Redis PING alone cannot detect a stuck DB/model worker.
     healthcheck:
-      test: ["CMD", "python", "-c", "import os, redis; assert redis.Redis.from_url(os.environ['REDIS_URL'], socket_connect_timeout=2, socket_timeout=2).ping()"]
+      test: ["CMD", "sh", "-ec", "python -m networkpulse.ops_health --role stream --path /tmp/networkpulse-stream-heartbeat.json --max-age-seconds 120 && python -c \"import os, redis; assert redis.Redis.from_url(os.environ['REDIS_URL'], socket_connect_timeout=2, socket_timeout=2).ping()\""]
       interval: 15s
       timeout: 5s
       retries: 3
-      start_period: 15s
+      start_period: 60s
     depends_on:
       db:
         condition: service_healthy
@@ -53,7 +52,7 @@ services:
       NETWORKPULSE_API_KEY: ${NETWORKPULSE_API_KEY:?Set NETWORKPULSE_API_KEY in .env}
       MODEL_PATH: /app/data/model.joblib
     volumes:
-      - model_data:/app/data
+      - model_data:/app/data:ro
     networks: [internal]
   mlops-worker:
     build: .
