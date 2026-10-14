@@ -33,8 +33,6 @@ def test_policy_rejects_invalid_operational_limits(timeout, backoff):
 
 
 def test_worker_fails_closed_after_sustained_handler_failure(app_settings, monkeypatch):
-    from networkpulse.streaming import redis_streams
-
     class NeverCommitted:
         calls = 0
 
