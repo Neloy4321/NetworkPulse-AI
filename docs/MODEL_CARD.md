@@ -87,3 +87,13 @@ improvement is made just by adding diagnostics. See
 artifact checksum and operator-declared stronger production promotion policy
 do not replace an independently verified deployment acceptance test or solve
 unsafe false alarm rates. No real model was automatically deployed.
+
+
+### Reserved-capture threshold policy study
+
+The native model (benign calibration only) was compared at prespecified q=0.97,
+0.99, and 0.995 on a later original UNSW capture. Test sample n=1,290 with 988
+benign and 302 attacks. Observed benign FPR moved 10.63% → 9.21% → 8.81%,
+while recall moved 86.09% → 84.44% → 83.77%. None meets a 5% production
+FPR standard and the policies were **not selected or deployed**. Full uncertainty,
+confusion matrix and experimental details: [ML reliability milestone](ML_RELIABILITY_MILESTONE.md).

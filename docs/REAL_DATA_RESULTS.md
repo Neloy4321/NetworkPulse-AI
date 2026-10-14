@@ -134,3 +134,8 @@ comparison, a verified native pipeline score and CI are complete as
 **engineering milestones**. An external independent network/site,
 real deployed sensor model check and acceptable alert budget remain missing.
 Therefore #1 is **not honestly 100% complete**.
+
+
+## Native FPR calibration sensitivity (reserved UNSW capture)
+
+See [reliability audit](ML_RELIABILITY_MILESTONE.md#predeclared-real-data-sensitivity-study) for a no-test-label-tuning comparison of three predeclared benign quantiles on UNSW raw `_1` training and later `_3` test. The best *observed* q=.995 policy had FPR **8.81%** and missed **49 of 302** attacks, and was **not promoted**. Separate model-site validation remains missing.

@@ -1,0 +1,92 @@
+{
+  "source": "UNSW-NB15 original raw dataset, official 49-column no-header format",
+  "source_google_drive_id": "16eIgENKYpiLwJNHZWRrYdPfGj6AOOtkT",
+  "source_archive_size_bytes": 586382286,
+  "ci_evidence_run": "https://github.com/Neloy4321/NetworkPulse-AI/actions/runs/38515319879",
+  "code": "networkpulse/evaluation/calibration_study.py",
+  "status": "exploratory_heldout_capture_study_not_promoted",
+  "sampling": {
+    "seed": 42,
+    "train_file": "UNSW-NB15_1.csv",
+    "test_file": "UNSW-NB15_3.csv",
+    "raw_train_valid": 699934,
+    "raw_train_invalid": 67,
+    "raw_test_valid": 699896,
+    "raw_test_invalid": 105,
+    "train_sample_unique": 2197,
+    "test_sample_unique": 1290,
+    "test_benign": 988,
+    "test_attack": 302
+  },
+  "validation": {
+    "disjoint_capture_files": true,
+    "sampled_chronological_nonoverlap": true,
+    "independent_site": false,
+    "candidate_selection_based_on_test": false,
+    "test_labels_used_for_training_or_calibration": false
+  },
+  "policies": {
+    "0.97": {
+      "quantile": 0.97,
+      "threshold": 0.1330517881950365,
+      "fit_count": 1252,
+      "benign_calibration_count": 329,
+      "precision": 0.71233,
+      "recall": 0.86093,
+      "f1": 0.77961,
+      "false_positive_rate": 0.10628,
+      "fpr_wilson_upper_95_one_sided": 0.12349,
+      "roc_auc": 0.9469,
+      "pr_auc": 0.86053,
+      "alerts": 365,
+      "tn": 883,
+      "fp": 105,
+      "fn": 42,
+      "tp": 260
+    },
+    "0.99": {
+      "quantile": 0.99,
+      "threshold": 0.137622225602234,
+      "fit_count": 1252,
+      "benign_calibration_count": 329,
+      "precision": 0.73699,
+      "recall": 0.84437,
+      "f1": 0.78704,
+      "false_positive_rate": 0.09211,
+      "fpr_wilson_upper_95_one_sided": 0.10837,
+      "roc_auc": 0.9469,
+      "pr_auc": 0.86053,
+      "alerts": 346,
+      "tn": 897,
+      "fp": 91,
+      "fn": 47,
+      "tp": 255
+    },
+    "0.995": {
+      "quantile": 0.995,
+      "threshold": 0.1401952117757728,
+      "fit_count": 1252,
+      "benign_calibration_count": 329,
+      "precision": 0.74412,
+      "recall": 0.83775,
+      "f1": 0.78816,
+      "false_positive_rate": 0.08806,
+      "fpr_wilson_upper_95_one_sided": 0.10403,
+      "roc_auc": 0.9469,
+      "pr_auc": 0.86053,
+      "alerts": 340,
+      "tn": 901,
+      "fp": 87,
+      "fn": 49,
+      "tp": 253
+    }
+  },
+  "limitations": [
+    "All three quantiles were predeclared before this reserved test-capture evaluation; report all, do not select a final winner on that test.",
+    "One-sided Wilson bound assumes independent binomial benign observations; network flows may be clustered/correlated.",
+    "Tested new in-memory research models, not the existing Docker production artifact.",
+    "Capture dates and sites come from a single published cyber range, not an independently operated deployment site.",
+    "The observed 8.81% best experimental FPR is still high and is not a production-ready false alert budget.",
+    "A new untouched site/time period and a human-reviewed alert cost target remain before deployment."
+  ]
+}

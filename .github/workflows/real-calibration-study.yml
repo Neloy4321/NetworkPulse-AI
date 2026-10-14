@@ -1,11 +1,5 @@
 name: Predeclared real-data FPR calibration study
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'networkpulse/evaluation/calibration_study.py'
-      - 'tests/test_calibration_study.py'
-      - '.github/workflows/real-calibration-study.yml'
   workflow_dispatch:
 permissions:
   contents: read

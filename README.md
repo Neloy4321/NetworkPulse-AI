@@ -349,3 +349,7 @@ Planned, **not implemented**: Kafka/Redpanda + ClickHouse, Zeek/Suricata continu
   protections do not change the measured real held-out false-positive rate.
   See [model lifecycle](docs/MODEL_LIFECYCLE.md) and
   [model card](docs/MODEL_CARD.md).
+
+
+Real-data calibration policy experiment: [ML reliability milestone](docs/ML_RELIABILITY_MILESTONE.md).
+This is a held-out cyber-range sensitivity study, not a production-safe threshold or a promoted model.

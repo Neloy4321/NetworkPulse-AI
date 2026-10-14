@@ -95,3 +95,12 @@ policy have been added with synthetic fixture regression tests. Demo model
 behavior and artifact format remain backwards readable; sensitivity requires
 newly trained metadata. No deployed model was promoted. Independent-site,
 signed evidence and operational false-alert targets remain external gates.
+
+
+## Prespecified calibration sensitivity benchmark
+
+[Report](ML_RELIABILITY_MILESTONE.md) documents three native Detector benign
+calibration quantiles on a reserved later UNSW capture (1,290 sampled flows).
+A higher threshold reduced measured false positives but missed more attacks,
+and the observed benign FPR remained at least 8.81%. This is exploratory only,
+not a validated production release or automatic model promotion.
