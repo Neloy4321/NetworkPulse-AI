@@ -234,7 +234,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/v1/intelligence/behavior", tags=["analytics"],
              dependencies=[Depends(read_scope)])
     def behavior_windows(
-        window_minutes: Literal[1, 5] = 5,
+        window_minutes: int = Query(5, ge=1, le=5),
         lookback_minutes: int = Query(60, ge=1, le=1440),
         until: datetime | None = None,
         src_ip: str | None = Query(default=None, max_length=45),
@@ -248,6 +248,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         """Actual persisted flow aggregation, not a separate benchmark-only path."""
         import ipaddress
         from networkpulse.behavior import activity_windows
+        if window_minutes not in (1, 5):
+            raise HTTPException(422, detail="window_minutes must be 1 or 5")
         if until is not None and (until.tzinfo is None or until.utcoffset() is None):
             raise HTTPException(422, detail="until must be timezone-aware")
         if src_ip:
