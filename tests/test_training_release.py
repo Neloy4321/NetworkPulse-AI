@@ -1,4 +1,5 @@
 """Candidate release: canonical dataset integrity, leakage gates, lineage and immutability."""
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -127,3 +128,46 @@ def test_too_few_holdout_classes_rejected(tmp_path):
     ]
     with pytest.raises(ValueError, match="holdout classes"):
         _build(tmp_path, events[:300] + benign_holdout)
+
+
+def test_separate_later_capture_gates_release_without_holdout_label_leakage(tmp_path):
+    earlier = _ordered()
+    # Preserve train/calibration history but deliberately make the *internal*
+    # last quartile benign. A separately labeled later capture provides the
+    # candidate evaluation. Do not weaken the data-quality gate silently.
+    earlier = earlier[:300] + [
+        e.model_copy(update={"label": "benign"}) for e in earlier[300:]
+    ]
+    later = sample_flows(
+        320, seed=29,
+        start=earlier[-1].timestamp + timedelta(days=1),
+    )
+    release = build_candidate(
+        earlier, name="real-protocol-fixture", root=tmp_path/"separate",
+        source_id="synthetic_test_earlier", dataset_sha256="1"*64,
+        validation_events=later,
+        validation_source_sha256="2"*64,
+        validation_source_id="synthetic_test_later",
+        seed=23,
+    )
+    import json
+    manifest = json.loads(Path(release["manifest_path"]).read_text())
+    assert manifest["separate_validation_capture"]["record_count"] == 320
+    assert manifest["separate_validation_capture"]["same_site_independence_verified"] is False
+    assert manifest["model"]["evaluation_protocol"] == "strictly_later_separate_capture"
+    assert release["metrics"]["benign_count"] >= 20
+    assert release["metrics"]["attack_count"] >= 5
+    assert manifest["dataset"]["split_counts"]["holdout_anomaly"] == 0
+    overlaps = later.copy()
+    overlaps[0] = overlaps[0].model_copy(update={
+        "timestamp": earlier[0].timestamp,
+    })
+    with pytest.raises(ValueError, match="overlaps training"):
+        build_candidate(
+            earlier, name="overlap", root=tmp_path/"separate",
+            source_id="synthetic_test", dataset_sha256="1"*64,
+            validation_events=overlaps,
+            validation_source_sha256="2"*64,
+            validation_source_id="synthetic_later",
+        )
+    assert not (tmp_path / "separate" / "overlap").exists()

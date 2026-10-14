@@ -112,3 +112,41 @@ This initial phase does not add automated self-training, source signing,
 cross-site validation, distributed promotion, feature-store versioning or
 a secure external provenance attestation authority. Promoting a model
 remains an explicit human-controlled operation.
+
+
+## Separate later-capture holdout — preferred for real deployments
+
+For real captures, the *earlier* source may contain enough benign traffic for
+fit and calibration but not both attack/benign classes in its internal final
+quartile. Do **not** fabricate attacks or weaken the label gate. Instead pass
+an independently reviewed, strictly **later** labeled canonical capture:
+
+```bash
+networkpulse train-release \
+  --data /secure/approved/earlier-flows.jsonl \
+  --dataset-sha256 "<pinned-SHA256-of-earlier-file>" \
+  --source-id "site_a_earlier_2026" \
+  --validation-data /secure/approved/later-flows.jsonl \
+  --validation-sha256 "<pinned-SHA256-of-later-file>" \
+  --validation-source-id "site_a_later_2026" \
+  --name "native-site-a-v1" --root /secure/candidates \
+  --min-gap-seconds 60 \
+  --min-f1 0.60 --max-alert-fraction 0.15
+```
+
+The pipeline ensures the validation capture has **at least 20 labeled benign
+and 5 labeled attack events**, no internal duplicate flow identities, strict
+chronological order, *no overlap or time-embargo violation* with all earlier
+training/calibration rows, and no repeated identities across captures.
+Training/calibration occur **entirely before** the later capture is scored.
+The candidate's release gates and registry metrics refer to this separate
+later capture, while internal pre-validation diagnostics remain explicitly
+separate in detector metadata. The manifest carries both source SHA-256
+declarations and both input-identity fingerprints but no original IPs or
+events. Captures from the same site or original cyber range are **not**
+independent-site validation; this must be audited outside the application.
+
+CI enforces this exact production path using original raw earlier
+`UNSW-NB15_1.csv` and later `UNSW-NB15_4.csv` samples (SHA-pinned original
+archive, bounded deterministic reservoir per capture). No real sample is
+silently relabeled, augmented or treated as an entire unselected archive.

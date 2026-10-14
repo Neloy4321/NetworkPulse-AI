@@ -89,6 +89,9 @@ def replay(archive: Path) -> dict:
             dataset_sha256=digest, source_id="unsw_raw_real_capture_security_replay",
             seed=42, min_f1=0.0, max_alert_fraction=1.0,
             dataset_selection="reservoir_sample_of_verified_raw_capture",
+            validation_events=sorted(candidate_events, key=lambda e: e.timestamp),
+            validation_source_sha256=digest,
+            validation_source_id="unsw_nb15_later_capture_4",
         )
         checked_release = verify_candidate(Path(release_result["directory"]))
         assert checked_release["sha256"] == release_result["model_sha256"]

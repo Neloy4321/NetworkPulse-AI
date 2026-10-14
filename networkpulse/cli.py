@@ -55,6 +55,12 @@ def main(argv: list[str] | None = None) -> int:
                          help="Exact SHA-256 computed independently for authorized source")
     release.add_argument("--source-id", required=True,
                          help="Non-sensitive declared provenance identifier")
+    release.add_argument("--validation-data", type=Path,
+                         help="Separately dated labeled canonical holdout capture")
+    release.add_argument("--validation-sha256",
+                         help="Independently pinned SHA of the later holdout capture")
+    release.add_argument("--validation-source-id",
+                         help="Declared provenance ID of later holdout capture")
     release.add_argument("--name", required=True)
     release.add_argument("--root", type=Path, default=Path("data/releases"))
     release.add_argument("--max-events", type=int, default=20000)
@@ -188,17 +194,27 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "train-release":
         from networkpulse.data_quality import fingerprint
         from networkpulse.training_release import build_candidate
-        if not args.data.is_file() or args.data.stat().st_size > 250_000_000:
-            parser.error("training data must be an existing file no larger than 250 MB")
-        if fingerprint(args.data) != args.dataset_sha256:
-            parser.error("training data SHA-256 differs from pinned source checksum")
         if not 100 <= args.max_events <= 100000:
             parser.error("max-events must be 100..100000")
-        loaded = []
-        for event in iter_jsonl(args.data, "canonical"):
-            loaded.append(event)
-            if len(loaded) > args.max_events:
-                parser.error("training dataset exceeds row cap; no silent truncation")
+        if any([args.validation_data, args.validation_sha256, args.validation_source_id]):
+            if not all([args.validation_data, args.validation_sha256, args.validation_source_id]):
+                parser.error("later validation requires data, SHA and source identifier together")
+
+        def read_pinned(path, expected_digest):
+            if not path.is_file() or path.stat().st_size > 250_000_000:
+                parser.error("training/validation dataset must be a file <=250 MB")
+            if fingerprint(path) != expected_digest:
+                parser.error("training/validation data SHA-256 differs from pinned source")
+            loaded_events = []
+            for event in iter_jsonl(path, "canonical"):
+                loaded_events.append(event)
+                if len(loaded_events) > args.max_events:
+                    parser.error("dataset exceeds max-events; no silent truncation")
+            return loaded_events
+
+        loaded = read_pinned(args.data, args.dataset_sha256)
+        later = (read_pinned(args.validation_data, args.validation_sha256)
+                 if args.validation_data else None)
         result = build_candidate(
             loaded, name=args.name, root=args.root,
             dataset_sha256=args.dataset_sha256, source_id=args.source_id,
@@ -207,6 +223,9 @@ def main(argv: list[str] | None = None) -> int:
             min_f1=args.min_f1, max_alert_fraction=args.max_alert_fraction,
             max_fpr_upper_95=args.max_fpr_upper_95,
             dataset_selection="complete_canonical_file",
+            validation_events=later,
+            validation_source_sha256=args.validation_sha256,
+            validation_source_id=args.validation_source_id,
         )
         if args.registry_root:
             from networkpulse.model_registry import ModelRegistry

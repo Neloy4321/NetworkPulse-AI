@@ -20,6 +20,8 @@ from networkpulse.detector import train
 from networkpulse.features import FEATURE_VERSION
 from networkpulse.model_registry import sha256
 from networkpulse.schemas import FlowEvent
+from networkpulse.reliability import confusion_profile, reliability_slices
+from sklearn.metrics import precision_recall_fscore_support
 
 _RELEASE_SCHEMA = 1
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
@@ -38,6 +40,7 @@ def _digest_keys(events: list[FlowEvent]) -> str:
 def validate_training_input(
     events: list[FlowEvent], *, max_events: int = 20000,
     min_boundary_gap_seconds: float = 0.0,
+    require_internal_holdout_classes: bool = True,
 ) -> dict:
     """Enforce exactly the 60/15/25 split used by Detector.train.
 
@@ -74,7 +77,7 @@ def validate_training_input(
     attack_holdout = sum(e.label == "anomaly" for e in holdout)
     if len(fit) < 50 or len(calibration) < 20:
         raise ValueError("not enough benign fitting/calibration examples")
-    if benign_holdout < 20 or attack_holdout < 5:
+    if require_internal_holdout_classes and (benign_holdout < 20 or attack_holdout < 5):
         raise ValueError("insufficient labeled holdout classes to certify candidate gates")
     return {
         "feature_contract": FEATURE_VERSION,
@@ -109,6 +112,9 @@ def build_candidate(
     min_f1: float = 0.0, max_alert_fraction: float = 1.0,
     max_fpr_upper_95: float | None = None,
     dataset_selection: str = "operator_supplied_not_independently_audited",
+    validation_events: list[FlowEvent] | None = None,
+    validation_source_sha256: str | None = None,
+    validation_source_id: str | None = None,
 ) -> dict:
     """Train + stage never-overwritten artifact/manifest under root/name.
 
@@ -136,8 +142,30 @@ def build_candidate(
     audited = validate_training_input(
         events, max_events=max_events,
         min_boundary_gap_seconds=min_boundary_gap_seconds,
+        require_internal_holdout_classes=validation_events is None,
     )
-    if "simulator" in audited["source_counts"] or "synthetic" in source_id.lower():
+    validation_audit = None
+    if validation_events is not None:
+        if (not validation_source_sha256 or not _DIGEST.fullmatch(validation_source_sha256)
+                or not validation_source_id or not _SOURCE.fullmatch(validation_source_id)):
+            raise ValueError("separate validation capture requires valid source ID and SHA-256")
+        if not 100 <= len(validation_events) <= max_events:
+            raise ValueError("validation capture row count outside bounded policy")
+        validation_audit = quality_report(validation_events)
+        if validation_audit["duplicate_count"] or not validation_audit["chronological_order"]:
+            raise ValueError("validation capture must have unique, chronological flow identities")
+        if any(e.label not in ("benign", "anomaly") for e in validation_events):
+            raise ValueError("validation capture requires complete reviewed labels")
+        if validation_audit["labels"].get("benign", 0) < 20 or validation_audit["labels"].get("anomaly", 0) < 5:
+            raise ValueError("separate holdout needs at least 20 benign and 5 attack labels")
+        if (validation_events[0].timestamp - events[-1].timestamp).total_seconds() <= min_boundary_gap_seconds:
+            raise ValueError("separate validation capture overlaps training or embargo period")
+        if set(e.key() for e in events).intersection(e.key() for e in validation_events):
+            raise ValueError("separate holdout reuses training event identities")
+        if len({e.source for e in validation_events}) != 1:
+            raise ValueError("mixed validation source contracts require audited mapping")
+    if ("simulator" in audited["source_counts"] or "synthetic" in source_id.lower()
+            or (validation_audit is not None and "simulator" in validation_audit["sources"])):
         # The model may still be useful in isolated development, but may not
         # masquerade as a field-validated candidate.
         source = "synthetic_demo_training_release"
@@ -148,10 +176,36 @@ def build_candidate(
 
     trained = train(events, seed=seed, quantile=quantile, source=source)
     metrics = trained.metadata.get("metrics")
+    scored_holdout = validation_events if validation_events is not None else events[int(len(events)*.75):]
+    if validation_events is not None:
+        # Fit and calibration use only the earlier capture. Later labels are
+        # consulted only after training, for held-out release gates.
+        detections = trained.score(validation_events)
+        truth = [int(event.label == "anomaly") for event in validation_events]
+        predicted = [int(x.anomalous) for x in detections]
+        precision, recall, f1, _ = precision_recall_fscore_support(
+            truth, predicted, average="binary", zero_division=0,
+        )
+        metrics = {
+            "precision": round(float(precision), 4),
+            "recall": round(float(recall), 4),
+            "f1": round(float(f1), 4),
+            "alerts": sum(predicted),
+            "holdout_anomalies": sum(truth),
+            **confusion_profile(truth, predicted),
+            "slices": reliability_slices(validation_events, detections)["slices"],
+            "evaluation_warning": "Later capture evaluation, not proof of "
+                "site independence, representative prevalence or field performance.",
+        }
+        trained.metadata["internal_metrics"] = trained.metadata.get("metrics")
+        trained.metadata["internal_holdout_count"] = trained.metadata.get("holdout_count")
+        trained.metadata["metrics"] = metrics
+        trained.metadata["holdout_count"] = len(validation_events)
+        trained.metadata["evaluation_protocol"] = "strictly_later_separate_capture"
     if not isinstance(metrics, dict):
         raise ValueError("no held-out labeled metrics: refuse candidate")
     f1 = float(metrics.get("f1", -1))
-    alert_fraction = metrics["alerts"] / audited["split_counts"]["holdout_total"]
+    alert_fraction = metrics["alerts"] / len(scored_holdout)
     if not math.isfinite(f1) or f1 < min_f1 or alert_fraction > max_alert_fraction:
         raise ValueError("candidate failed held-out F1 or alert-budget release gate")
     if max_fpr_upper_95 is not None:
@@ -162,8 +216,7 @@ def build_candidate(
 
     # Functional fingerprint is reproducible for the same data/seed/code even
     # though byte-identical joblib is not promised (trained_at differs).
-    holdout = events[int(len(events)*.75):]
-    predictions = trained.score(holdout)
+    predictions = trained.score(scored_holdout)
     functional = hashlib.sha256(json.dumps({
         "threshold": round(trained.threshold, 8),
         "scores": [x.anomaly_score for x in predictions],
@@ -189,6 +242,9 @@ def build_candidate(
                 "trained_at": trained.metadata["trained_at"],
                 "seed": seed, "quantile": quantile,
                 "functional_holdout_sha256": functional,
+                "evaluation_protocol": trained.metadata.get(
+                    "evaluation_protocol", "internal_chronological_holdout"
+                ),
             },
             "dataset": {
                 "source_id": source_id,
@@ -198,6 +254,19 @@ def build_candidate(
                 "ground_truth_labels_independently_verified": False,
                 **audited,
             },
+            "separate_validation_capture": (
+                {
+                    "source_id": validation_source_id,
+                    "raw_source_sha256": validation_source_sha256,
+                    "selection": "operator_supplied_later_labeled_capture",
+                    "record_count": len(validation_events),
+                    "event_identity_sha256": _digest_keys(validation_events),
+                    "labels": validation_audit["labels"],
+                    "chronologically_after_training": True,
+                    "same_site_independence_verified": False,
+                    "labels_independently_verified": False,
+                } if validation_events is not None else None
+            ),
             "validation": {
                 "heldout_metrics": metrics,
                 "gate": {"min_f1": min_f1,
