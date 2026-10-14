@@ -109,6 +109,21 @@ def replay(archive: Path) -> dict:
         assert registry.status()["active"] is None
         assert entry["release_lineage"]["raw_source_sha256"] == digest
         assert entry["release_lineage"]["provenance_independently_verified"] is False
+        # Exercise the actual operator-controlled artifact copy and invariant
+        # against original UNSW training, but DO NOT mark it as production
+        # approved: neither site independence nor key trust was verified.
+        local_registry = ModelRegistry(directory / "local-deployment-registry")
+        local_registry.register(
+            "unsw-candidate-local", Path(release_result["model_path"]),
+            release_directory=None,
+        )
+        staged_local = directory / "local-ci-active-model.joblib"
+        local_registry.promote("unsw-candidate-local", staged_local, production=False)
+        assert local_registry.verify_active(staged_local)["consistent"] is True
+        assert local_registry.verify_active(staged_local)["sha256"] == (
+            release_result["model_sha256"]
+        )
+        assert registry.status()["active"] is None
         upgrade_database(database)
         settings = Settings(
             database_url=database,
@@ -427,6 +442,7 @@ def replay(archive: Path) -> dict:
             "real_training_release_integrity_verified": True,
             "real_training_candidate_scores_reproducible": True,
             "real_training_candidate_registry_not_deployed": True,
+            "real_training_local_release_hash_verified": True,
             "real_training_split_quality_gate_verified": True,
             "real_redis_stream_batch_ingest_idempotent": True,
             "real_redis_stream_pending_and_dlq_empty": True,
