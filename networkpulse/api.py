@@ -85,6 +85,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
         title="NetworkPulse AI", version="0.5.0",
         description="Flow observability, anomaly triage and auditable review. Not an IDS replacement.",
+        # Do not rely solely on Caddy to hide implementation metadata: the
+        # application must remain safe if the reverse proxy is bypassed.
+        docs_url=None if settings.deployment_mode == "production" else "/docs",
+        redoc_url=None if settings.deployment_mode == "production" else "/redoc",
+        openapi_url=None if settings.deployment_mode == "production" else "/openapi.json",
     )
 
     app.state.browser_login = browser
