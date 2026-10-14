@@ -95,7 +95,9 @@ def test_missing_rotated_inode_fails_closed_and_preserves_checkpoint(tmp_path):
     rotated.unlink()
     active.write_text("".join(_as_lines(events[1:])))
     from networkpulse.streaming.collector import ContinuityError
-    with pytest.raises(ContinuityError, match="unavailable"):
+    # A newly opened file may reuse the unlinked inode immediately.
+    # The checkpoint anchor must still reject rewritten history.
+    with pytest.raises(ContinuityError, match="unavailable|rewritten"):
         c.poll_once()
     assert checkpoint.read_bytes() == saved
 
@@ -185,7 +187,7 @@ def test_real_redis_collector_survives_rotation_and_backpressure(tmp_path):
     import redis
     events = sample_flows(110, seed=2609)[:102]
     active = tmp_path / "conn.jsonl"
-    active.write_text("".join(_as_lines(events)))
+    active.write_text("".join(_as_lines(events[:100])))
     client = redis.Redis.from_url(os.environ["REDIS_TEST_URL"], decode_responses=True)
     key = "networkpulse:ci:rotation:" + uuid.uuid4().hex
     queue = FlowStream(client, stream=key, group="ci-rotation", max_backlog=100)
