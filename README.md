@@ -50,7 +50,7 @@ Network logs are produced in different shapes by different sensors. An investiga
 The original dashboard and v0.2 database correctness features are preserved. The v0.3 work adds:
 
 - **Official UNSW-NB15 CSV compatibility runner**, with Isolation Forest vs. LOF novelty vs. rule-based baseline, confusion matrices, PR-AUC/ROC-AUC/FPR, file provenance and cross-partition duplicate checks. **An official-dataset run and an independent chronological/site holdout are still pending**. See [benchmark methodology](docs/REAL_DATA_BENCHMARK.md).
-- **Optional OIDC resource-server mode**: RS256 access tokens, HTTPS JWKS/issuer, audience and role checks, with Viewer/Analyst/Admin API permissions. Browser sign-in/PKCE is **not yet integrated**. Local demo mode is unchanged. [Threat model](docs/SECURITY_THREAT_MODEL.md).
+- **Optional OIDC resource-server mode**: RS256 access tokens, HTTPS JWKS/issuer, audience and role checks, with Viewer/Analyst/Admin API permissions. As of the original v0.3 milestone, browser sign-in was not yet integrated. Later security work adds opt-in browser OIDC/PKCE, Redis sessions and logout; no real IdP deployment has been verified. Local demo mode is unchanged. [Threat model](docs/SECURITY_THREAT_MODEL.md).
 - **Redis Streams collection and worker** with at-least-once replay, file checkpoints, pending-claim recovery, dead-letter behavior and bounded backlog. Opt-in [streaming runbook](docs/STREAMING_RUNBOOK.md).
 - **Prometheus-format metrics and JSON request logging**, [operations limitations](docs/OBSERVABILITY.md).
 - **Model drift and alert-budget reports**, windowed source-IP behavior aggregates, and alert filtering/sorting/pagination.
@@ -357,4 +357,24 @@ This is a held-out cyber-range sensitivity study, not a production-safe threshol
 
 ## October 2026 API security hardening
 
-Implemented bounded fail-closed rate buckets, response security headers, spreadsheet-safe SOC CSV exports, OIDC JWT bounds, placeholder-key rejection, and CI dependency/static security scanning. See [Security Milestone](docs/SECURITY_HARDENING_MILESTONE.md) and [Threat Model](docs/SECURITY_THREAT_MODEL.md). **Interactive browser OIDC/PKCE, production TLS and independent penetration testing remain open.**
+Implemented bounded fail-closed rate buckets, response security headers, spreadsheet-safe SOC CSV exports, OIDC JWT bounds, placeholder-key rejection, and CI dependency/static security scanning. See [Security Milestone](docs/SECURITY_HARDENING_MILESTONE.md) and [Threat Model](docs/SECURITY_THREAT_MODEL.md). **Browser OIDC/PKCE, distributed Redis rate limiting and TLS gateway code are now implemented and CI-validated; live IdP/DNS/TLS provisioning and independent penetration testing remain open.**
+
+
+## October 2026 SSO, HTTPS and distributed security upgrade
+
+- Browser OIDC Authorization Code + PKCE, nonce-checked RS256 ID and access tokens,
+  Secure/HttpOnly server-side Redis sessions, strict-CSRF browser mutations and
+  revocable logout. Same-origin UI no longer asks for API keys in browser SSO mode.
+- Optional Caddy 2.11.7 TLS reverse proxy, private Redis session store,
+  production-only OIDC checks and Redis-shared atomic per-credential/global
+  request throttling. **Development/local mode remains unchanged.**
+- Production Docker startup rejects missing prevalidated model and
+  `MODEL_SHA256`; it no longer synthetic-bootstraps in production mode.
+- [TLS/IdP configuration runbook](docs/DEPLOYMENT_SSO_TLS.md),
+  [independent security test handoff](docs/PENETRATION_TEST_HANDOFF.md).
+- [Local passive OWASP ZAP scan](https://github.com/Neloy4321/NetworkPulse-AI/actions/runs/38545768495)
+  completed: 0 fail categories, 9 warning categories and 58 pass categories.
+  Warnings remain to be reviewed on the real staging environment. A local
+  synthetic-data passive DAST scan is **not** an independent penetration test.
+
+**No real identity-provider login or publicly exposed deployment has been validated.**

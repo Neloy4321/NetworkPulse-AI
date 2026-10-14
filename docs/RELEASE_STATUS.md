@@ -109,3 +109,17 @@ not a validated production release or automatic model promotion.
 ## Security hardening October 2026
 
 Improved in-process rate limiter, HTTP response headers, spreadsheet-formula-safe CSV export, JWT bounds, demo secret validation, and on-change pip-audit/Bandit CI. See [milestone](SECURITY_HARDENING_MILESTONE.md). OIDC browser SSO, distributed limits, public HTTPS deployment and independent penetration testing remain incomplete.
+
+
+## SSO / HTTPS / distributed security upgrade (October 2026)
+
+An optional browser Authorization Code+PKCE SSO flow, Redis sessions/CSRF,
+logout revocation, HTTPS gateway configuration and Redis atomic rate limiting
+are implemented with automated integration checks. Caddy/Compose configuration
+validation passed; the synthetic-only localhost OWASP ZAP passive scan passed
+its job with 0 fail categories and 9 warning categories (warnings not cleared).
+Production Docker startup now needs a prevalidated model+checksum, not demo
+bootstrap. **No live third-party OIDC provider, public domain/TLS instance
+or independent human pentest has been supplied or validated.** Read
+[deployment runbook](DEPLOYMENT_SSO_TLS.md) and
+[pentest handoff](PENETRATION_TEST_HANDOFF.md).

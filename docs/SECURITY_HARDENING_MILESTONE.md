@@ -1,3 +1,9 @@
+# Earlier security hardening snapshot
+
+> This document describes an earlier phase. For current SSO/HTTPS implementation,
+> see [deployment runbook](DEPLOYMENT_SSO_TLS.md) and
+> [penetration-test handoff](PENETRATION_TEST_HANDOFF.md).
+
 # Authentication & Security — security hardening milestone
 
 **Status:** Focused defensive improvements committed, tested and documented.

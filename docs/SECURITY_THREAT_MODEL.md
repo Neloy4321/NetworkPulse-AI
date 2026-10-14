@@ -28,11 +28,11 @@ NETWORKPULSE_OIDC_AUDIENCE=networkpulse-api
 NETWORKPULSE_OIDC_ROLE_CLAIM=networkpulse_role
 ```
 
-Tokens must be sent as `Authorization: Bearer <OIDC access token>`. Viewer reads; Analyst ingests and triages; Admin accesses `/metrics`. **OIDC mode currently does not offer a browser login/PKCE flow**; an identity provider and credentialed reverse proxy or browser integration are required before publishing a usable multi-user SOC dashboard. Do **not** expose local mode directly to the internet.
+Tokens must be sent as `Authorization: Bearer <OIDC access token>`. Viewer reads; Analyst ingests and triages; Admin accesses `/metrics`. **The current opt-in OIDC browser mode includes Authorization Code + PKCE, sessions and logout, but no real external IdP or HTTPS domain has been deployed/tested.** Do **not** expose local mode directly to the internet.
 
 ## Priority blockers to production
 
-- OIDC browser sign-in/PKCE and per-request actor audit logging.
+- End-to-end sign-in with a real external IdP and per-request actor audit verification.
 - TLS reverse proxy, distributed rate limiting, secure cookies and CSP, security test suite.
 - Secret rotation, backups encryption, monitoring, vulnerability scans and penetration testing.
 - Model artifact integrity verification and rollback protocol.
@@ -65,7 +65,7 @@ Tokens must be sent as `Authorization: Bearer <OIDC access token>`. Viewer reads
 
 ### What is *not* solved
 
-- **Interactive browser OIDC sign-in/PKCE and logout** are **not complete**.
+- **Interactive browser OIDC sign-in/PKCE and logout** are implemented in code, but **real-provider integration and independent staging testing remain**.
   OIDC still protects REST APIs with externally issued bearer tokens; the
   browser dashboard is *not* a complete enterprise SSO client.
 - Local development mode deliberately allows anonymous **read** endpoints
@@ -97,3 +97,20 @@ Tokens must be sent as `Authorization: Bearer <OIDC access token>`. Viewer reads
    dependency results, security updates and secret-rotation procedures.
 
 [Full milestone](SECURITY_HARDENING_MILESTONE.md).
+
+
+### Current implementation update — 2026-10-14
+
+Browser OIDC code now supports state/nonce-bound PKCE, HTTPS token exchange,
+separate RS256 ID/access token verification, Redis-backed opaque HttpOnly
+sessions, browser CSRF+Origin checks, analyst/admin RBAC and logout revocation.
+Caddy TLS + deployment Compose validation, and Redis-shared global/per-credential
+rate limits have CI evidence. Production is fail-closed without OIDC, Redis
+and a checksum-pinned trusted model. No real domain, IdP or independent
+penetration test has been verified. See [runbook](DEPLOYMENT_SSO_TLS.md)
+and [pentest scope](PENETRATION_TEST_HANDOFF.md).
+
+The passive ZAP scan of localhost development found zero fail categories and
+nine warning categories, including inline-style CSP and Swagger UI CDN SRI.
+Development Swagger is not reachable through the production Caddy gateway.
+These are open review items, not evidence of a clean live pentest.
