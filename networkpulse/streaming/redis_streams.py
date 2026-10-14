@@ -198,6 +198,7 @@ class FlowStream:
         validator: Callable[[dict], object], *,
         recover: bool = True, block_ms: int = 1000,
         recover_idle_ms: int = 30000,
+        on_handler_failure: Callable[[], None] | None = None,
     ) -> dict:
         """Validate before scoring; one DB commit per valid Redis read batch.
 
@@ -228,6 +229,10 @@ class FlowStream:
             handler(good_payloads)
         except Exception:
             # A temporary PostgreSQL outage must not exhaust poison retries.
+            # Tell the supervisor WITHOUT exposing the database error or flow
+            # payload. The callback may fail closed if its budget has elapsed.
+            if on_handler_failure is not None:
+                on_handler_failure()
             out["retried"] += len(good_ids)
             return out
         self._ack_many(good_ids)
@@ -299,8 +304,11 @@ def connect(url: str):
     return client
 
 
-def process_events(queue: FlowStream, consumer: str, *, settings, once: bool = False):
-    """Runtime batching, validated metadata and single database transaction."""
+def process_events(queue: FlowStream, consumer: str, *, settings, once: bool = False,
+                   max_stall_seconds: float = 90.0,
+                   retry_backoff_max_seconds: float = 4.0,
+                   clock=None, sleeper=None):
+    """Supervised native scoring: preserve pending traffic and fail after stall."""
     from networkpulse.detector import Detector
     from networkpulse.schemas import FlowEvent
     from networkpulse.service import ingest
@@ -308,7 +316,15 @@ def process_events(queue: FlowStream, consumer: str, *, settings, once: bool = F
     from networkpulse.ops_health import mark_success
     from sqlalchemy import text as sql_text
     from pathlib import Path
+    from time import monotonic, sleep
+    from networkpulse.streaming.worker_recovery import WorkerFailureBudget
 
+    budget = WorkerFailureBudget(
+        max_stall_seconds=max_stall_seconds,
+        max_backoff_seconds=retry_backoff_max_seconds,
+    )
+    clock = monotonic if clock is None else clock
+    sleeper = sleep if sleeper is None else sleeper
     from networkpulse.deployment_preflight import require_runtime_release
     require_runtime_release(settings)
     if settings.deployment_mode == "production" and not settings.model_sha256:
@@ -335,21 +351,35 @@ def process_events(queue: FlowStream, consumer: str, *, settings, once: bool = F
 
     try:
         while True:
+            def note_failure():
+                budget.record_handler_failure(clock())
+
             outcome = queue.consume_batch_once(
                 unique_consumer, store_batch, FlowEvent.model_validate,
+                on_handler_failure=note_failure,
             )
-            # An empty Redis poll does NOT demonstrate that PostgreSQL is
-            # available. Probe before refreshing idle/poison-only health;
-            # failure exits the worker and leaves pending flows untouched.
-            if not outcome["processed"] and not outcome["retried"]:
+            if outcome["processed"]:
+                # A committed PostgreSQL batch is actual forward progress.
+                budget.committed_batch()
+            # An empty Redis poll DOES NOT clear a previously failed handler:
+            # it might be waiting for XAUTOCLAIM's idle timeout. Neither
+            # successfully reading Redis nor SELECT 1 proves that the failed
+            # batch has been committed.
+            budget.assert_not_expired(clock())
+            if not outcome["processed"] and not outcome["retried"] and not budget.degraded:
                 with maker() as session:
                     session.execute(sql_text("SELECT 1"))
-            if not outcome["retried"] or outcome["processed"]:
+            if not budget.degraded and (not outcome["retried"] or outcome["processed"]):
                 mark_success(Path("/tmp/networkpulse-stream-heartbeat.json"), "stream")
             if once:
                 return outcome
             if any(outcome.values()):
-                # No IPs, payloads or credentials in logs.
+                # No IPs, flow payloads or credentials in operational logs.
                 print(json.dumps({"worker": "flow", **outcome}), flush=True)
+            if budget.degraded:
+                delay = budget.retry_delay(clock())
+                if delay:
+                    sleeper(delay)
+                budget.assert_not_expired(clock())
     finally:
         maker.kw["bind"].dispose()
