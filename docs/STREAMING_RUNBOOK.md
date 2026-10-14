@@ -154,7 +154,7 @@ functional evidence, not independent traffic throughput certification.
 The collector is **loss-intolerant** about source rotation. It persists the
 actual opened file's POSIX device/inode and byte offset after each successfully
 published or intentionally skipped complete JSONL record. The checkpoint is an
-atomic, mode-0600 file with a synced directory entry. A stable advisory lock
+atomic, mode-0600 file with a synced directory entry. A SHA-256 of the last 128 checkpointed bytes also detects same-inode rewriting after rapid copytruncate/regrowth, even when the file has already grown beyond the old offset. A stable advisory lock
 at `<checkpoint>.lock` prevents two collector processes from using the same
 checkpoint concurrently; the continuous `follow` command owns the lock for
 its lifetime. Do not put checkpoints on filesystems that lack reliable POSIX
