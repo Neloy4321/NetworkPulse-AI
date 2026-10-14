@@ -125,3 +125,60 @@ multi-signal finding does not prove an attack.
 - Real external IdP/TLS staging, network operator licensing, high-rate load
   testing on actual infrastructure and independent penetration assessment
   remain separate deployment gates.
+
+
+## Hourly cross-window incident correlation (schema revision 0006)
+
+A genuine **second correlation layer** groups two or more persisted,
+completed 5-minute BehaviorFinding windows for the **same source IP in one UTC
+hour** into one durable case. Rather than 20,000 recent-flow sampling or an
+in-memory top-N, it queries SQL source/window findings and retains a stable
+SHA-256 derived source/hour case ID. This is bounded **source/hour evidence**
+and not a claim that two different hosts or hours form an attributed attack
+campaign.
+
+- **Deployment:** perform verified backup, migrate to
+  `0006_behavior_incidents`, then restart the existing
+  `behavior-worker`. Its successful processing cycle now materializes
+  raw-flow behavior windows **and** hourly multi-window incidents. Configure
+  `--incident-hours 3` to revisit the latest three UTC hours (default);
+  `--incident-hours` accepts 1..24.
+- **Backfill:** `networkpulse behavior-worker --once --until
+  2026-10-14T15:00:00+00:00 --lookback 180 --incident-hours 3 --lateness 0`.
+  It reprocesses original archived timestamps, not arbitrary current time.
+  Earlier hours beyond the lookback require explicit operator backfill.
+- **Evidence:** `GET /api/v1/intelligence/incidents` (viewer+)
+  returns paginated case summaries, with status/source filters;
+  `GET /api/v1/intelligence/incidents/{id}/evidence` returns ordered,
+  stored five-minute findings. Missing referenced evidence returns HTTP 409
+  instead of silently pretending a complete investigation. No packet capture
+  or automatic blocking occurs.
+- **Human triage:** analyst/admin can `PATCH
+  /api/v1/intelligence/incidents/{id}` with a status, optional owner and
+  a mandatory reason. Attribution, previous status and previous assignment
+  are stored in `behavior_incident_audit` in the same DB commit.
+  `GET /api/v1/intelligence/incidents/{id}/history` exposes a bounded
+  viewer-authorized history. Idempotent reprocessing preserves resolved
+  and false-positive dispositions and owner, even with late evidence.
+- **SOC UI:** persistent incident list, per-window timeline and review
+  history; all source/actor fields are rendered via `textContent`.
+- **Concurrency:** PostgreSQL/SQLite native `ON CONFLICT` keyed by UTC
+  hour and source. Newer evidence may increase window/flow/flagged counts;
+  overlapping worker writes cannot duplicate the incident. A source's
+  separate hourly cases are not merged or silently reparented.
+- **Qualification:** signals and severity use deterministic heuristic
+  prioritization. No calibrated threat probability, automatic incident
+  verification, cross-host lateral-movement proof, MITRE ATT&CK mapping or
+  independently validated causal inference is claimed.
+
+### Evidence and deployment limitations
+
+Quality tests cover SQLite+PostgreSQL, concurrent processors,
+human review preservation, completed UTC windows, and provenance-aware
+timeline endpoints. Original UNSW-NB15 replay validates the same runtime
+API and SQL correlation over genuine held-out flows; depending on capture
+distribution there may be *zero* multi-window incidents (the pipeline
+must never manufacture attacks or labels merely to produce one).
+Independent network telemetry, p95/p99 throughput under actual load,
+retention/partitioning, cross-site false-positive studies and a security
+assessment remain necessary for production certification.

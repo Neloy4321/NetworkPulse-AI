@@ -24,11 +24,13 @@ from networkpulse.observability import metric_middleware, exporter, INGEST_TOTAL
 import time
 from networkpulse.detector import Detector
 from networkpulse.schemas import (
-    AlertPatch, AlertAssignment, AnalystNote, BehaviorFindingPatch, FlowBatch,
+    AlertPatch, AlertAssignment, AnalystNote, BehaviorFindingPatch,
+    BehaviorIncidentPatch, FlowBatch,
 )
 from networkpulse.service import change_alert, ingest
 from networkpulse.storage import (
     Alert, AlertAudit, AlertNote, BehaviorFinding, BehaviorFindingAudit,
+    BehaviorIncident, BehaviorIncidentAudit,
     MLOpsDriftRun, NetworkEvent, build_sessions, counts,
 )
 
@@ -400,6 +402,114 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ))
         db.commit()
         return behavior_case_dict(record)
+
+    def incident_as_dict(incident: BehaviorIncident) -> dict:
+        return {
+            "id": incident.id, "source_ip": incident.source_ip,
+            "hour_start_utc": incident.hour_start,
+            "first_seen_utc": incident.first_seen,
+            "last_seen_utc": incident.last_seen,
+            "window_count": incident.window_count,
+            "flow_count": incident.total_flows,
+            "flagged_flows": incident.flagged_flows,
+            "signals": incident.patterns, "severity": incident.severity,
+            "status": incident.status, "assigned_to": incident.assigned_to,
+            "created_at": incident.created_at, "updated_at": incident.updated_at,
+            "evidence_type": "multi_window_source_hour_heuristic",
+        }
+
+    @app.get("/api/v1/intelligence/incidents", tags=["analytics"],
+             dependencies=[Depends(read_scope)])
+    def list_incidents(
+        limit: int = Query(30, ge=1, le=100),
+        offset: int = Query(0, ge=0, le=10000),
+        status: Literal["open", "investigating", "resolved", "false_positive"] | None = None,
+        source_ip: str | None = Query(default=None, max_length=45),
+        db: Session = Depends(get_db),
+    ):
+        import ipaddress
+        q = select(BehaviorIncident)
+        if status:
+            q = q.where(BehaviorIncident.status == status)
+        if source_ip:
+            try:
+                normalized = str(ipaddress.ip_address(source_ip))
+            except ValueError as exc:
+                raise HTTPException(422, detail="Invalid source address") from exc
+            q = q.where(BehaviorIncident.source_ip == normalized)
+        items = db.scalars(q.order_by(
+            BehaviorIncident.hour_start.desc(), BehaviorIncident.id.asc(),
+        ).offset(offset).limit(limit + 1)).all()
+        return {
+            "incidents": [incident_as_dict(item) for item in items[:limit]],
+            "has_more": len(items) > limit,
+            "disclaimer": "Hourly source-correlated heuristics, not verified attacks.",
+        }
+
+    @app.get("/api/v1/intelligence/incidents/{incident_id}/evidence",
+             tags=["analytics"], dependencies=[Depends(read_scope)])
+    def incident_evidence(incident_id: str, db: Session = Depends(get_db)):
+        item = db.get(BehaviorIncident, incident_id)
+        if item is None:
+            raise HTTPException(404, detail="Incident not found")
+        findings = list(db.scalars(select(BehaviorFinding).where(
+            BehaviorFinding.id.in_(item.finding_ids),
+        ).order_by(BehaviorFinding.window_start.asc(), BehaviorFinding.id.asc())))
+        if len(findings) != len(item.finding_ids):
+            raise HTTPException(409, detail="Incident evidence incomplete; restore retained finding data")
+        return {
+            "incident": incident_as_dict(item),
+            "timeline": [behavior_case_dict(f) for f in findings],
+            "warning": "Evidence windows are heuristics; no proof of compromise.",
+        }
+
+    @app.get("/api/v1/intelligence/incidents/{incident_id}/history",
+             tags=["analytics"], dependencies=[Depends(read_scope)])
+    def incident_history(incident_id: str, db: Session = Depends(get_db)):
+        if db.get(BehaviorIncident, incident_id) is None:
+            raise HTTPException(404, detail="Incident not found")
+        rows = db.scalars(select(BehaviorIncidentAudit).where(
+            BehaviorIncidentAudit.incident_id == incident_id,
+        ).order_by(BehaviorIncidentAudit.changed_at.desc(),
+                   BehaviorIncidentAudit.id.desc()).limit(100)).all()
+        return [{
+            "actor": row.actor, "old_status": row.old_status,
+            "new_status": row.new_status, "old_assignee": row.old_assignee,
+            "new_assignee": row.new_assignee, "note": row.note,
+            "changed_at": row.changed_at,
+        } for row in rows]
+
+    @app.patch("/api/v1/intelligence/incidents/{incident_id}",
+               tags=["analytics"], dependencies=[Depends(require_api_key)])
+    def update_incident(
+        incident_id: str, payload: BehaviorIncidentPatch,
+        principal: Principal = Depends(analyst_scope),
+        db: Session = Depends(get_db),
+    ):
+        if not ({"status", "assigned_to"} & payload.model_fields_set):
+            raise HTTPException(422, detail="Specify a status or assignment")
+        if "status" in payload.model_fields_set and payload.status is None:
+            raise HTTPException(422, detail="Status cannot be null")
+        item = db.scalar(select(BehaviorIncident).where(
+            BehaviorIncident.id == incident_id,
+        ).with_for_update())
+        if item is None:
+            raise HTTPException(404, detail="Incident not found")
+        previous_status, previous_owner = item.status, item.assigned_to
+        if "status" in payload.model_fields_set:
+            item.status = payload.status
+        if "assigned_to" in payload.model_fields_set:
+            item.assigned_to = payload.assigned_to
+        from networkpulse.storage import now_utc
+        item.updated_at = now_utc()
+        db.add(BehaviorIncidentAudit(
+            incident_id=item.id, actor=principal.subject[:150],
+            old_status=previous_status, new_status=item.status,
+            old_assignee=previous_owner, new_assignee=item.assigned_to,
+            note=payload.note,
+        ))
+        db.commit()
+        return incident_as_dict(item)
 
     @app.get("/api/v1/intelligence/hosts", tags=["analytics"], dependencies=[Depends(read_scope)])
     def intelligence_hosts(

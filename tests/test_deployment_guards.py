@@ -37,6 +37,6 @@ def test_production_schema_check_read_only_and_fails_on_pending_migration(
     monkeypatch.setenv("DATABASE_URL", url)
     assert main(["db", "check"]) == 1
     assert not Path(tmp_path / "preflight.db").with_name("preflight.db.pre-migration.bak").exists()
-    assert upgrade_database(url)["revision"] == "0005_mlops_drift_runs"
+    assert upgrade_database(url)["revision"] == "0006_behavior_incidents"
     assert main(["db", "check"]) == 0
     assert '"ready": true' in capsys.readouterr().out.lower()

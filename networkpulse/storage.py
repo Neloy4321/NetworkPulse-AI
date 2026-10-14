@@ -112,6 +112,44 @@ class BehaviorFindingAudit(Base):
     finding: Mapped[BehaviorFinding] = relationship(back_populates="history")
 
 
+class BehaviorIncident(Base):
+    """Source/hour correlated evidence, separate from per-window findings."""
+
+    __tablename__ = "behavior_incidents"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    source_ip: Mapped[str] = mapped_column(String(45), nullable=False)
+    hour_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    window_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    finding_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    patterns: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    total_flows: Mapped[int] = mapped_column(Integer, nullable=False)
+    flagged_flows: Mapped[int] = mapped_column(Integer, nullable=False)
+    severity: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="open")
+    assigned_to: Mapped[str | None] = mapped_column(String(150))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    history: Mapped[list[BehaviorIncidentAudit]] = relationship(back_populates="incident")
+
+
+class BehaviorIncidentAudit(Base):
+    """Human-attributed status and assignment changes; no automatic reopening."""
+
+    __tablename__ = "behavior_incident_audit"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    incident_id: Mapped[str] = mapped_column(ForeignKey("behavior_incidents.id"), nullable=False)
+    actor: Mapped[str] = mapped_column(String(150), nullable=False)
+    old_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    new_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    old_assignee: Mapped[str | None] = mapped_column(String(150))
+    new_assignee: Mapped[str | None] = mapped_column(String(150))
+    note: Mapped[str] = mapped_column(String(1500), nullable=False)
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    incident: Mapped[BehaviorIncident] = relationship(back_populates="history")
+
+
 class MLOpsDriftRun(Base):
     """Immutable, input-fingerprinted report for a pinned deployed model."""
 
@@ -140,6 +178,9 @@ class AlertNote(Base):
     alert: Mapped[Alert] = relationship(back_populates="notes")
 
 
+Index("idx_incident_source_hour", BehaviorIncident.source_ip, BehaviorIncident.hour_start)
+Index("idx_incident_status_hour", BehaviorIncident.status, BehaviorIncident.hour_start)
+Index("idx_incident_audit_case", BehaviorIncidentAudit.incident_id, BehaviorIncidentAudit.changed_at)
 Index("idx_mlops_drift_end", MLOpsDriftRun.window_end.desc())
 Index("idx_mlops_drift_status_end", MLOpsDriftRun.drift_status, MLOpsDriftRun.window_end.desc())
 Index("idx_behavior_source_window", BehaviorFinding.source_ip, BehaviorFinding.window_start.desc())
@@ -177,7 +218,7 @@ def build_sessions(database_url: str) -> sessionmaker[Session]:
         raise RuntimeError("Database is not migrated; run: networkpulse db upgrade")
     with engine.connect() as connection:
         version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one_or_none()
-    if version != "0005_mlops_drift_runs":
+    if version != "0006_behavior_incidents":
         engine.dispose()
         raise RuntimeError("Database migration required; run: networkpulse db upgrade")
     return sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)

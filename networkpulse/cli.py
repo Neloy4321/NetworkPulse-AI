@@ -132,6 +132,8 @@ def main(argv: list[str] | None = None) -> int:
     behavior_worker.add_argument("--min-ports", type=int, default=12)
     behavior_worker.add_argument("--min-destinations", type=int, default=8)
     behavior_worker.add_argument("--burst-per-minute", type=int, default=120)
+    behavior_worker.add_argument("--incident-hours", type=int, default=3,
+                                 help="Reconcile source/hour incident episodes over last N UTC hours")
     behavior_worker.add_argument("--until", help="Timezone-aware ISO 8601 backfill end")
 
     monitor = cmd.add_parser(
@@ -341,6 +343,7 @@ def main(argv: list[str] | None = None) -> int:
         from datetime import datetime
         from networkpulse.ops_health import mark_success
         from networkpulse.behavior_cases import materialize_findings
+        from networkpulse.incidents import materialize_incidents
         if not 5 <= args.interval <= 3600:
             parser.error("behavior-worker interval must be 5..3600 seconds")
         settings = Settings.from_env()
@@ -357,7 +360,13 @@ def main(argv: list[str] | None = None) -> int:
                         min_destinations=args.min_destinations,
                         burst_per_minute=args.burst_per_minute,
                     )
-                print(json.dumps(outcome), flush=True)
+                with maker() as session:
+                    incident_report = materialize_incidents(
+                        session, until=until, lookback_hours=args.incident_hours,
+                        lateness_minutes=args.lateness,
+                    )
+                print(json.dumps({"behavior_windows": outcome,
+                                  "cross_window_incidents": incident_report}), flush=True)
                 mark_success(Path("/tmp/networkpulse-behavior-heartbeat.json"), "behavior")
                 if args.once:
                     break

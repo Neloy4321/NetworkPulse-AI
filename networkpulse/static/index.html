@@ -21,6 +21,7 @@
         <a class="nav-link current" href="#overview"><span>◫</span> Overview</a>
         <a class="nav-link" href="#traffic"><span>⌁</span> Network traffic</a>
         <a class="nav-link" href="#behavior"><span>▦</span> Behavior windows</a>
+        <a class="nav-link" href="#incident-timeline"><span>◉</span> Incident timeline</a>
         <a class="nav-link" href="#investigations"><span>◈</span> Investigations</a>
         <a class="nav-link" href="#model"><span>◇</span> Model intelligence</a>
       </nav>
@@ -83,6 +84,25 @@
           <tbody id="finding-body"><tr><td colspan="7">Loading persistent investigations…</td></tr></tbody>
         </table></div>
         <p class="table-note" id="finding-status">No automated blocking. Cases require human review; status and ownership are audited.</p>
+      </section>
+      <section class="panel table-panel" id="incident-timeline" aria-label="Multi-window incident investigations">
+        <div class="panel-header"><div>
+          <span class="overline">05 // PERSISTENT INCIDENT CORRELATION</span>
+          <h2>Multi-window incident timeline</h2>
+          <p class="section-sub">Repeated source behavior across distinct five-minute windows, grouped in bounded UTC-hour episodes.</p>
+        </div></div>
+        <div class="table-scroll"><table>
+          <thead><tr><th>UTC HOUR</th><th>SOURCE</th><th>WINDOWS</th>
+          <th>FLOWS / FLAGS</th><th>HEURISTIC SIGNALS</th><th>STATUS</th><th>ACTION</th></tr></thead>
+          <tbody id="incident-body"><tr><td colspan="7">Loading correlated incidents…</td></tr></tbody>
+        </table></div>
+        <div id="incident-detail" hidden>
+          <h3 id="incident-detail-heading">Evidence timeline</h3>
+          <ol id="incident-evidence"></ol>
+          <h3>Human review history</h3>
+          <ol id="incident-history"></ol>
+        </div>
+        <p class="table-note" id="incident-status">Multi-window correlation is investigation evidence, never attack confirmation or automatic blocking.</p>
       </section>
       <section class="panel table-panel" id="investigations"><div class="panel-header"><div><span class="overline">03 // ALERT OPERATIONS</span><h2>Investigation queue</h2><p class="section-sub">Alert state changes are recorded in an audit log.</p></div><div class="filter-controls">
 <label class="filter-label" for="status-filter">Status <select id="status-filter"><option value="">All statuses</option><option value="open">Open</option><option value="investigating">Investigating</option><option value="resolved">Resolved</option><option value="false_positive">False positive</option></select></label>

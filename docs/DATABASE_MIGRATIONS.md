@@ -88,3 +88,7 @@ Alembic revision `0003_soc_accountability` adds `alerts.assigned_to`, `alert_aud
 ## v0.5+ operational MLOps evidence migration
 
 Revision `0005_mlops_drift_runs` adds immutable, model-SHA and exact-input-fingerprint keyed drift monitoring history. Existing flow, alert, SOC and behavior case tables are unchanged. Apply `networkpulse db upgrade` with a verified backup before deploying either the API or `mlops-worker`. Models and original flow rows are not copied into this table; only aggregate PSI/alert-volume reports are stored.
+
+## Revision 0006 — multi-window SOC incident episodes
+
+The forward-only `0006_behavior_incidents` migration adds `behavior_incidents` and `behavior_incident_audit`, leaving all historical flow alerts, per-window findings, MLOps drift evidence and human ownership unchanged. Back up PostgreSQL with pg_dump (or SQLite with the built-in backup) before upgrading. The application intentionally refuses to start against an old schema. Incident IDs are deterministic by source and UTC hour, not attack attribution; source-window evidence is referenced by immutable finding identifiers. Analysts approve status/assignment changes, not automation.

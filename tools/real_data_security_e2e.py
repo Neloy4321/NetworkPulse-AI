@@ -215,6 +215,54 @@ def replay(archive: Path) -> dict:
                         assert session.query(BehaviorFinding).count() == (
                             candidate_report["candidate_upserts"]
                         )
+                    from networkpulse.incidents import materialize_incidents
+                    with maker() as session:
+                        incident_report = materialize_incidents(
+                            session, until=last_boundary, lookback_hours=24,
+                            lateness_minutes=0,
+                        )
+                    incident_list = api.get(
+                        "/api/v1/intelligence/incidents", params={"limit": 100},
+                        headers=authorization("viewer"),
+                    )
+                    assert incident_list.status_code == 200
+                    assert api.get("/api/v1/intelligence/incidents").status_code == 401
+                    incidents = incident_list.json()["incidents"]
+                    assert len(incidents) == min(100, incident_report["candidate_upserts"])
+                    if incidents:
+                        candidate = incidents[0]
+                        timeline_url = "/api/v1/intelligence/incidents/" + candidate["id"]
+                        evidence = api.get(timeline_url + "/evidence",
+                                           headers=authorization("viewer"))
+                        assert evidence.status_code == 200
+                        assert len(evidence.json()["timeline"]) >= 2
+                        assert evidence.json()["incident"]["window_count"] == len(
+                            evidence.json()["timeline"]
+                        )
+                        denied = api.patch(
+                            timeline_url, json={"status": "investigating",
+                                                "note": "Actual capture evidence review"},
+                            headers=authorization("viewer"),
+                        )
+                        assert denied.status_code == 403
+                        reviewed = api.patch(
+                            timeline_url, json={"status": "resolved",
+                                                "note": "Authorized analyst sample review"},
+                            headers=authorization("analyst"),
+                        )
+                        assert reviewed.status_code == 200
+                        with maker() as session:
+                            materialize_incidents(
+                                session, until=last_boundary, lookback_hours=24,
+                                lateness_minutes=0,
+                            )
+                        assert api.get(timeline_url + "/evidence",
+                                       headers=authorization("viewer")).json()[
+                                           "incident"]["status"] == "resolved"
+                        audit = api.get(timeline_url + "/history",
+                                        headers=authorization("viewer"))
+                        assert audit.status_code == 200
+                        assert audit.json()[0]["new_status"] == "resolved"
                     case_list = api.get(
                         "/api/v1/intelligence/findings", params={"limit": 100},
                         headers=authorization("viewer"),
@@ -349,6 +397,8 @@ def replay(archive: Path) -> dict:
         "redis_stream_ci_flows_per_second": redis_flow_rate,
         "inserted_real_flows": inserted,
         "durable_behavior_cases": candidate_report["candidate_upserts"],
+        "correlated_source_hour_incidents": incident_report["candidate_upserts"],
+        "multi_window_evidence_reviewed": bool(incidents),
         "mlops_monitored_real_flows": monitored["flow_count"],
         "mlops_model_sha256": monitored["model_sha256"],
         "mlops_input_fingerprint": monitored["input_fingerprint"],
