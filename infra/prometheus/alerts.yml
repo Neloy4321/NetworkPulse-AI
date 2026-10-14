@@ -11,13 +11,29 @@ groups:
           summary: "NetworkPulse API scrape unavailable"
           description: "Inspect API container and Prometheus target health."
       - alert: NetworkPulseRedisPreviouslyConnectedUnavailable
-        expr: (networkpulse_stream_redis_reachable == 0) and (networkpulse_stream_group_exists == 1)
+        expr: (networkpulse_stream_redis_reachable == 0) and (max_over_time(networkpulse_stream_group_exists[1h]) == 1)
         for: 3m
         labels:
           severity: warning
         annotations:
           summary: "Previously monitored Redis stream is unavailable"
           description: "Check Redis service or optional streaming profile; group-present gauge may be stale during outage."
+      - alert: NetworkPulseOldestFlowAgeHigh
+        expr: networkpulse_stream_oldest_age_seconds > 120
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Oldest unprocessed Redis flow exceeds two minutes"
+          description: "Check worker health, PostgreSQL status and Redis backlog; tune threshold using measured site SLOs."
+      - alert: NetworkPulseMissingConsumerGroupWithBacklog
+        expr: (networkpulse_stream_depth > 0) and (networkpulse_stream_group_exists == 0)
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Flows waiting in Redis without a worker consumer group"
+          description: "Start streaming workers or investigate group loss before backlog grows."
       - alert: NetworkPulseRedisConsumerLagHigh
         expr: networkpulse_stream_lag > 100
         for: 5m

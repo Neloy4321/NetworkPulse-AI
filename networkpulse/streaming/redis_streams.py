@@ -29,6 +29,18 @@ return redis.call('XADD', KEYS[1], '*', 'event', ARGV[2])
 # XACK must succeed before XDEL. MULTI/EXEC does NOT roll back an
 # XDEL following a command-level XACK error; Lua aborts at redis.call error.
 _ACK_SCRIPT = """
+-- Lua errors do not roll back previous Redis operations. Check every pending
+-- entry before any XACK; reject nonexistent/duplicate IDs without partial ACK.
+if #ARGV < 2 then return redis.error_reply('EMPTY_ACK_BATCH') end
+local seen = {}
+for i=2,#ARGV do
+  if seen[ARGV[i]] then return redis.error_reply('DUPLICATE_ACK_ID') end
+  seen[ARGV[i]] = true
+  local pending = redis.call('XPENDING', KEYS[1], ARGV[1], ARGV[i], ARGV[i], 1)
+  if #pending ~= 1 or pending[1][1] ~= ARGV[i] then
+    return redis.error_reply('ACK_COUNT_MISMATCH')
+  end
+end
 local acknowledged = redis.call('XACK', KEYS[1], ARGV[1], unpack(ARGV, 2))
 if acknowledged ~= #ARGV - 1 then
   return redis.error_reply('ACK_COUNT_MISMATCH')
@@ -39,6 +51,12 @@ return redis.call('XDEL', KEYS[1], unpack(ARGV, 2))
 # XADD dead-letter event MUST succeed before acknowledging/deleting the
 # original message. Redis Lua redis.call errors abort the subsequent actions.
 _DLQ_SCRIPT = """
+-- Refuse a missing group-pending source before adding DLQ records, avoiding
+-- ghost copies if a later XACK would have returned zero.
+local pending = redis.call('XPENDING', KEYS[1], ARGV[4], ARGV[1], ARGV[1], 1)
+if #pending ~= 1 or pending[1][1] ~= ARGV[1] then
+  return redis.error_reply('DLQ_SOURCE_NOT_PENDING')
+end
 local dlq_id = redis.call('XADD', KEYS[2], '*',
    'event', ARGV[2], 'source_id', ARGV[1], 'reason', ARGV[3],
    'origin_stream', KEYS[1])
@@ -288,6 +306,7 @@ def process_events(queue: FlowStream, consumer: str, *, settings, once: bool = F
     from networkpulse.service import ingest
     from networkpulse.storage import build_sessions
     from networkpulse.ops_health import mark_success
+    from sqlalchemy import text as sql_text
     from pathlib import Path
 
     from networkpulse.deployment_preflight import require_runtime_release
@@ -319,8 +338,12 @@ def process_events(queue: FlowStream, consumer: str, *, settings, once: bool = F
             outcome = queue.consume_batch_once(
                 unique_consumer, store_batch, FlowEvent.model_validate,
             )
-            # A connection/model failure must not refresh worker readiness.
-            # Successful empty polls are fine: no site flow is being dropped.
+            # An empty Redis poll does NOT demonstrate that PostgreSQL is
+            # available. Probe before refreshing idle/poison-only health;
+            # failure exits the worker and leaves pending flows untouched.
+            if not outcome["processed"] and not outcome["retried"]:
+                with maker() as session:
+                    session.execute(sql_text("SELECT 1"))
             if not outcome["retried"] or outcome["processed"]:
                 mark_success(Path("/tmp/networkpulse-stream-heartbeat.json"), "stream")
             if once:

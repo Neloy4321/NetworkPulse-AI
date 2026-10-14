@@ -23,6 +23,10 @@ STREAM_LAG = Gauge("networkpulse_stream_lag", "Undelivered entries for worker gr
 STREAM_DLQ = Gauge("networkpulse_stream_dead_letter_depth", "Dead-letter stream depth")
 STREAM_CONSUMERS = Gauge("networkpulse_stream_consumers", "Registered Redis group consumers")
 STREAM_GROUP_EXISTS = Gauge("networkpulse_stream_group_exists", "Consumer group exists (1=yes)")
+STREAM_OLDEST_AGE = Gauge(
+    "networkpulse_stream_oldest_age_seconds",
+    "Age in Redis of oldest unprocessed stream message"
+)
 logger = logging.getLogger("networkpulse.access")
 
 
@@ -44,7 +48,10 @@ def observe_stream(redis_url: str, *, client=None) -> None:
         snapshot = stream_snapshot(client)
     except Exception:
         STREAM_REACHABLE.set(0)
-        STREAM_LAG.set(float("nan"))
+        # Unavailable Redis is unknown, never an empty/healthy queue.
+        for metric in (STREAM_DEPTH, STREAM_PENDING, STREAM_LAG, STREAM_DLQ,
+                       STREAM_CONSUMERS, STREAM_GROUP_EXISTS, STREAM_OLDEST_AGE):
+            metric.set(float("nan"))
         return
     finally:
         if owned and client is not None:
@@ -56,6 +63,10 @@ def observe_stream(redis_url: str, *, client=None) -> None:
     STREAM_DLQ.set(snapshot["dead_letter_depth"])
     STREAM_CONSUMERS.set(snapshot["consumers"])
     STREAM_GROUP_EXISTS.set(int(snapshot["group_exists"]))
+    STREAM_OLDEST_AGE.set(
+        snapshot["oldest_age_seconds"]
+        if snapshot["oldest_age_seconds"] is not None else float("nan")
+    )
 
 
 async def metric_middleware(request: Request, call_next):

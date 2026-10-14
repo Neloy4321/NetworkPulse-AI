@@ -16,6 +16,12 @@ class FakeRedis:
     def exists(self, key):
         return int(self.has_stream)
 
+    def xrange(self, key, min="-", max="+", count=1):
+        return [("1000000-0", {"event": "{}"})] if self.has_stream else []
+
+    def time(self):
+        return (1000, 500000)
+
     def xinfo_groups(self, key):
         return [{"name": "other", "pending": 99, "lag": 99, "consumers": 7}] + (
             [{"name": "networkpulse-workers", "pending": 1,
@@ -28,6 +34,7 @@ def test_stream_snapshot_reports_pending_and_lag_separately():
     assert result == {
         "stream_depth": 4, "dead_letter_depth": 2,
         "pending": 1, "lag": 3, "consumers": 2, "group_exists": True,
+        "oldest_age_seconds": 0.5,
     }
 
 
@@ -45,3 +52,4 @@ def test_stream_prometheus_gauges():
     assert "networkpulse_stream_lag 3.0" in data
     assert "networkpulse_stream_dead_letter_depth 2.0" in data
     assert "networkpulse_stream_redis_reachable 1.0" in data
+    assert "networkpulse_stream_oldest_age_seconds 0.5" in data

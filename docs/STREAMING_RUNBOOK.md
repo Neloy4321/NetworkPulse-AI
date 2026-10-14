@@ -106,3 +106,45 @@ never expose a public web endpoint for this command.
   target-network load, size Postgres connections and Redis storage for actual
   peaks, and rehearse Redis failover, dead-letter retention and DB restore.
   No numeric deployment throughput or incident MTTR is certified by CI.
+
+
+## Processing integrity and production queue-age telemetry (October 2026)
+
+Redis Lua scripting does **not** roll back commands executed before a script
+raises. Batch ACK now preflights every pending ID (and rejects duplicates)
+before any XACK/XDEL. Dead-letter transfer also confirms that its original
+message is pending **before** XADD to the DLQ. A missing or already-ACKed
+source cannot create an orphaned DLQ copy. These operations protect normal
+Redis group state; they do not address privileged Redis tampering, storage
+failures, or crash recovery without appropriately configured/persisted AOF.
+
+The stream worker now executes a read-only `SELECT 1` against its own
+configured database whenever an empty or poison-only Redis read would
+otherwise refresh its success heartbeat. A lost PostgreSQL connection
+causes the worker to exit rather than report fresh-but-false health.
+Docker Compose includes `restart: unless-stopped` and a controlled
+30-second stop grace period. Transient handler/model/database failures during
+a *non-empty* batch continue to preserve legitimate pending messages for
+retry; an unhealthy but running container still needs host alerting.
+
+A new Prometheus gauge `networkpulse_stream_oldest_age_seconds` measures
+**Redis queue residence time** for the oldest live entry (including pending
+entries), from Redis-assigned stream ID and Redis server clock. It is zero
+when the stream is empty and NaN/unknown when Redis cannot be observed.
+This is not sensor-to-alert latency: collect and correlate actual sensor
+ingest timestamps before defining end-to-end SLOs.
+
+The observability rules warn when the oldest queued flow exceeds 120 seconds
+for three minutes, and critically alert on a nonempty stream with no
+consumer group. A Redis-unreachable alert now evaluates previously observed
+group existence over the trailing hour to avoid treating an unknown metric
+as a healthy empty queue. Configure an authenticated paging channel; local
+Prometheus rules alone **do not send notifications**. The default 120-second
+threshold is not a certified site SLO and must be replaced with measured
+targets for each deployment.
+
+Regression gates exercise the real Redis pending list, invalid ACK batches,
+DLQ transfer refusal, and a 1,000-flow Redis/PostgreSQL scorer burst with
+a fault injected before the first transaction, followed by worker recovery
+and exact persisted-ID reconciliation. CI measurements are host-specific
+functional evidence, not independent traffic throughput certification.

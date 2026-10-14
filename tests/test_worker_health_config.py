@@ -35,4 +35,6 @@ def test_stream_worker_health_requires_recent_successful_cycle():
     assert "networkpulse.ops_health --role stream" in worker
     assert "--max-age-seconds 120" in worker
     assert "model_data:/app/data:ro" in worker
+    assert "restart: unless-stopped" in worker
+    assert "stop_grace_period: 30s" in worker
     assert "socket_connect_timeout=2" in worker

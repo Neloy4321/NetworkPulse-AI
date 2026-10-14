@@ -132,3 +132,97 @@ def test_concurrent_stream_batches_to_postgres_without_loss_or_replay():
         maker.kw["bind"].dispose()
         redis_client.delete(stream, queue.dead_letter)
         redis_client.close()
+
+
+@pytest.mark.skipif(
+    not (os.getenv("REDIS_TEST_URL") and os.getenv("PG_TEST_DATABASE_URL")),
+    reason="PostgreSQL and Redis isolated CI services required",
+)
+def test_burst_pipeline_survives_transient_commit_failure_and_drains_exactly_once():
+    """Real Redis/PG, actual model scoring, ACK safety and recovery under a burst.
+
+    This is a reproducible functional/load observation, not an external-site SLO.
+    """
+    import time
+    from statistics import median
+    import redis
+    from networkpulse.schemas import FlowEvent
+    from networkpulse.service import ingest
+    from networkpulse.streaming.monitoring import stream_snapshot
+
+    db_url = os.environ["PG_TEST_DATABASE_URL"]
+    upgrade_database(db_url)
+    model = train(sample_flows(400, seed=1901), seed=1901)
+    flows = sample_flows(1100, seed=1902)[:1000]
+    unique_ids = {event.key() for event in flows}
+    client = redis.Redis.from_url(
+        os.environ["REDIS_TEST_URL"], decode_responses=True,
+    )
+    stream = "networkpulse:ci:burst-recovery:" + uuid.uuid4().hex
+    queue = FlowStream(client, stream=stream, group="ci", max_backlog=1500)
+    maker = build_sessions(db_url)
+    fault_once = {"outage": True}
+    try:
+        queue.initialize()
+        for event in flows:
+            queue.enqueue(event.model_dump(mode="json"))
+
+        def commit(batch):
+            if fault_once["outage"]:
+                fault_once["outage"] = False
+                raise ConnectionError("injected transient commit failure")
+            with maker() as session:
+                ingest(session, model, batch)
+
+        failed = queue.consume_batch_once(
+            "crash-before-commit", commit, FlowEvent.model_validate,
+            recover=False, block_ms=5,
+        )
+        assert failed["retried"] > 0
+        assert failed["processed"] == failed["dead_lettered"] == 0
+        assert client.xlen(stream) == len(flows)
+        assert client.xpending(stream, "ci")["pending"] == failed["retried"]
+        durations = []
+        accepted = 0
+        start = time.perf_counter()
+        for _ in range(100):
+            step = time.perf_counter()
+            result = queue.consume_batch_once(
+                "restarted-worker", commit, FlowEvent.model_validate,
+                recover=True, recover_idle_ms=0, block_ms=5,
+            )
+            assert result["retried"] == result["dead_lettered"] == 0
+            accepted += result["processed"]
+            if result["processed"]:
+                durations.append(time.perf_counter() - step)
+            if accepted == len(flows):
+                break
+        elapsed = time.perf_counter() - start
+        assert accepted == len(flows), "Backlog failed to drain after worker recovery"
+        assert client.xlen(stream) == 0
+        assert client.xpending(stream, "ci")["pending"] == 0
+        assert client.xlen(queue.dead_letter) == 0
+        assert stream_snapshot(client, stream=stream, group="ci",
+                               dead_letter=queue.dead_letter)["oldest_age_seconds"] == 0
+        with maker() as session:
+            stored = set(session.scalars(
+                select(NetworkEvent.id).where(NetworkEvent.id.in_(unique_ids))
+            ))
+            assert stored == unique_ids
+
+        ordered = sorted(durations)
+        idx = max(0, min(len(ordered) - 1, int(len(ordered) * .95 + .999999) - 1))
+        print({
+            "scope": "CI Redis and PostgreSQL, not field/production SLO",
+            "committed_flows": accepted,
+            "unique_persisted_flows": len(stored),
+            "committed_batches": len(durations),
+            "elapsed_seconds": round(elapsed, 3),
+            "observed_flows_per_second": round(accepted / max(elapsed, 1e-9), 1),
+            "batch_latency_median_ms": round(median(durations) * 1000, 2),
+            "batch_latency_p95_ms": round(ordered[idx] * 1000, 2),
+        })
+    finally:
+        maker.kw["bind"].dispose()
+        client.delete(stream, queue.dead_letter)
+        client.close()

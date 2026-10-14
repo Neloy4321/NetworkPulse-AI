@@ -30,6 +30,8 @@ services:
   worker:
     build: .
     profiles: ["streaming"]
+    restart: unless-stopped
+    stop_grace_period: 30s
     command: ["networkpulse", "worker", "--consumer", "compose-worker-1"]
     # Both a recent successful processing cycle and live Redis are required;
     # Redis PING alone cannot detect a stuck DB/model worker.
