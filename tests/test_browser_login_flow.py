@@ -195,3 +195,29 @@ def test_real_rs256_oidc_identity_nonce_and_pkce_exchange(monkeypatch):
             verifier,
         ))
     assert error.value.status_code == 401
+
+    # Multi-audience OIDC ID tokens require azp bound to this client.
+    identity_claims["aud"] = ["public-client", "other-client"]
+    response_id_token = jwt.encode(identity_claims, key, algorithm="RS256")
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(browser.exchange(
+            "verified-auth-code", {"verifier": "generated-verifier", "nonce": nonce},
+            verifier,
+        ))
+    assert error.value.status_code == 401
+
+    identity_claims["azp"] = "other-client"
+    response_id_token = jwt.encode(identity_claims, key, algorithm="RS256")
+    with pytest.raises(HTTPException):
+        asyncio.run(browser.exchange(
+            "verified-auth-code", {"verifier": "generated-verifier", "nonce": nonce},
+            verifier,
+        ))
+
+    identity_claims["azp"] = "public-client"
+    response_id_token = jwt.encode(identity_claims, key, algorithm="RS256")
+    verified, ttl = asyncio.run(browser.exchange(
+        "verified-auth-code", {"verifier": "generated-verifier", "nonce": nonce},
+        verifier,
+    ))
+    assert verified == access and ttl > 0

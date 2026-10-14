@@ -87,6 +87,16 @@ class BrowserLogin:
                 issuer=self.issuer, options={"require": ["iss", "aud", "sub", "iat", "exp"]},
                 leeway=30,
             )
+            # OIDC Core: an ID token with multiple audiences must identify
+            # this OAuth client as its authorized party. Also reject a
+            # mismatched azp when it is present for a single audience.
+            audiences = claims.get("aud")
+            authorized_party = claims.get("azp")
+            if ((isinstance(audiences, list) and len(audiences) > 1 and
+                    authorized_party != self.client_id) or
+                    (authorized_party is not None and
+                     authorized_party != self.client_id)):
+                raise ValueError("Invalid OIDC authorized party")
             if (claims.get("nonce") != pending["nonce"] or
                     claims["sub"] != principal.subject):
                 raise ValueError("Invalid OIDC identity binding")
