@@ -150,3 +150,43 @@ def test_operator_approved_dead_letter_replay_is_atomic_and_auditable():
     finally:
         client.delete(stream, queue.dead_letter)
         client.close()
+
+
+@pytest.mark.skipif(not os.getenv("REDIS_TEST_URL"), reason="CI Redis required")
+def test_dead_letter_storage_failure_never_acknowledges_or_deletes_source():
+    """Redis MULTI cannot roll back partial runtime errors; Lua ordering does."""
+    import redis
+
+    client = redis.Redis.from_url(os.environ["REDIS_TEST_URL"], decode_responses=True)
+    stream = "networkpulse:ci:dlq-failure:" + uuid.uuid4().hex
+    queue = FlowStream(client, stream=stream, group="ci", max_backlog=100,
+                       max_attempts=2)
+    try:
+        queue.initialize()
+        queue.enqueue({"bad_record": True})
+        failed = queue.consume_batch_once(
+            "ci-a", lambda _: None, FlowEvent.model_validate,
+            recover=False, block_ms=5,
+        )
+        assert failed["retried"] == 1
+        # Force a wrong-type error in destination DLQ (e.g. operator
+        # accidentally overwrote the DLQ stream with a Redis string).
+        client.set(queue.dead_letter, "wrongtype")
+        with pytest.raises(redis.exceptions.ResponseError):
+            queue.consume_batch_once(
+                "ci-b", lambda _: None, FlowEvent.model_validate,
+                recover=True, recover_idle_ms=0, block_ms=5,
+            )
+        assert client.xlen(stream) == 1
+        assert client.xpending(stream, "ci")["pending"] == 1
+        client.delete(queue.dead_letter)
+        restored = queue.consume_batch_once(
+            "ci-c", lambda _: None, FlowEvent.model_validate,
+            recover=True, recover_idle_ms=0, block_ms=5,
+        )
+        assert restored["dead_lettered"] == 1
+        assert client.xlen(stream) == 0
+        assert client.xlen(queue.dead_letter) == 1
+    finally:
+        client.delete(stream, queue.dead_letter)
+        client.close()

@@ -26,6 +26,30 @@ end
 return redis.call('XADD', KEYS[1], '*', 'event', ARGV[2])
 """
 
+# XACK must succeed before XDEL. MULTI/EXEC does NOT roll back an
+# XDEL following a command-level XACK error; Lua aborts at redis.call error.
+_ACK_SCRIPT = """
+local acknowledged = redis.call('XACK', KEYS[1], ARGV[1], unpack(ARGV, 2))
+if acknowledged ~= #ARGV - 1 then
+  return redis.error_reply('ACK_COUNT_MISMATCH')
+end
+return redis.call('XDEL', KEYS[1], unpack(ARGV, 2))
+"""
+
+# XADD dead-letter event MUST succeed before acknowledging/deleting the
+# original message. Redis Lua redis.call errors abort the subsequent actions.
+_DLQ_SCRIPT = """
+local dlq_id = redis.call('XADD', KEYS[2], '*',
+   'event', ARGV[2], 'source_id', ARGV[1], 'reason', ARGV[3],
+   'origin_stream', KEYS[1])
+local acknowledged = redis.call('XACK', KEYS[1], ARGV[4], ARGV[1])
+if acknowledged ~= 1 then
+  return redis.error_reply('ACK_COUNT_MISMATCH')
+end
+redis.call('XDEL', KEYS[1], ARGV[1])
+return dlq_id
+"""
+
 # Move a selected DLQ entry back to the original live stream atomically.
 # Operators must audit/checksum an item before replay (see replay_dead_letter).
 _REQUEUE_SCRIPT = """
@@ -101,28 +125,19 @@ class FlowStream:
         return entries or self._messages(consumer, block_ms=block_ms)
 
     def _ack_many(self, ids: list[str]) -> None:
-        if not ids:
-            return
-        with self.redis.pipeline(transaction=True) as pipe:
-            pipe.xack(self.stream, self.group, *ids)
-            pipe.xdel(self.stream, *ids)
-            pipe.execute()
+        if ids:
+            self.redis.eval(_ACK_SCRIPT, 1, self.stream, self.group, *ids)
 
     def _ack(self, msg_id: str) -> None:
         self._ack_many([msg_id])
 
     def _dead_letter(self, msg_id: str, fields: dict, reason: str) -> None:
-        # Preserve source bytes (metadata, no PCAP) for authorized triage.
-        # Atomic: a DLQ insertion error never ACKs/deletes the source.
-        with self.redis.pipeline(transaction=True) as pipe:
-            pipe.xadd(self.dead_letter, {
-                "event": fields.get("event", ""),
-                "source_id": msg_id, "reason": reason[:100],
-                "origin_stream": self.stream,
-            })
-            pipe.xack(self.stream, self.group, msg_id)
-            pipe.xdel(self.stream, msg_id)
-            pipe.execute()
+        # Original payload remains in Redis until DLQ XADD is successful.
+        # This is Lua-atomic and aborts on command errors before ACK/XDEL.
+        self.redis.eval(
+            _DLQ_SCRIPT, 2, self.stream, self.dead_letter,
+            msg_id, fields.get("event", ""), reason[:100], self.group,
+        )
 
     def _deliveries(self, msg_id: str) -> int:
         info = self.redis.xpending_range(
@@ -302,7 +317,7 @@ def process_events(queue: FlowStream, consumer: str, *, settings, once: bool = F
             )
             # A connection/model failure must not refresh worker readiness.
             # Successful empty polls are fine: no site flow is being dropped.
-            if not outcome["retried"]:
+            if not outcome["retried"] or outcome["processed"]:
                 mark_success(Path("/tmp/networkpulse-stream-heartbeat.json"), "stream")
             if once:
                 return outcome
