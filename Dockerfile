@@ -17,6 +17,10 @@ COPY --from=builder /opt/networkpulse-venv /opt/networkpulse-venv
 COPY networkpulse/ ./networkpulse/
 COPY alembic.ini ./
 COPY alembic/ ./alembic/
+# The offline, operator-invoked recovery commands require native pg_dump
+# and pg_restore (not a pure-Python imitation of a PostgreSQL backup).
+RUN apt-get update && apt-get install --no-install-recommends -y postgresql-client && \
+    rm -rf /var/lib/apt/lists/*
 RUN groupadd --system --gid 10001 networkpulse && \
     useradd --system --uid 10001 --gid networkpulse --home-dir /app networkpulse && \
     mkdir -p /app/data && chown -R networkpulse:networkpulse /app/data

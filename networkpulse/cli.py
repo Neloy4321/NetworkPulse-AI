@@ -29,8 +29,16 @@ def main(argv: list[str] | None = None) -> int:
     cmd = parser.add_subparsers(dest="command", required=True)
 
     db = cmd.add_parser("db", help="Manage schema migrations")
-    db.add_argument("action", choices=["upgrade", "status", "check", "backup"])
-    db.add_argument("--output", type=Path, help="Backup destination (SQLite only)")
+    db.add_argument("action", choices=[
+        "upgrade", "status", "check", "backup", "snapshot",
+        "verify-snapshot", "recovery-drill",
+    ])
+    db.add_argument("--output", type=Path, help="Backup or snapshot path")
+    db.add_argument("--manifest", type=Path, help="Optional snapshot manifest location")
+    db.add_argument("--restore-url", help="EXISTING empty and separately named drill database URL")
+    db.add_argument("--expected-sha256", help="Operator-approved snapshot SHA-256 for drill")
+    db.add_argument("--confirm-isolated-target", action="store_true",
+                    help="Required acknowledgement that the target is disposable and empty")
 
     boot = cmd.add_parser("bootstrap", help="Train on a seeded synthetic demo, seed demo events")
     boot.add_argument("--seed", type=int, default=42)
@@ -538,6 +546,24 @@ def main(argv: list[str] | None = None) -> int:
             if args.output is None:
                 parser.error("db backup requires --output")
             result = backup_sqlite(url, args.output)
+        elif args.action in {"snapshot", "verify-snapshot", "recovery-drill"}:
+            from networkpulse.recovery import (
+                create_snapshot, verify_snapshot, recovery_drill,
+            )
+            if args.output is None:
+                parser.error("db snapshot/verification/recovery requires --output")
+            if args.action == "snapshot":
+                result = create_snapshot(url, args.output)
+            elif args.action == "verify-snapshot":
+                result = verify_snapshot(args.output, args.manifest)
+            else:
+                if not args.restore_url or not args.expected_sha256:
+                    parser.error("recovery-drill requires --restore-url and --expected-sha256")
+                result = recovery_drill(
+                    args.output, args.restore_url,
+                    expected_sha256=args.expected_sha256,
+                    confirm_isolated_target=args.confirm_isolated_target,
+                )
         else:
             result = database_version(url)
         print(json.dumps(result, indent=2))

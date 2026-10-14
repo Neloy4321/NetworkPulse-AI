@@ -8,6 +8,7 @@ on:
       - 'compose.tls.yaml'
       - 'Dockerfile'
       - 'networkpulse/cli.py'
+      - 'networkpulse/recovery.py'
       - 'networkpulse/ops_health.py'
       - 'networkpulse/api.py'
       - 'tests/test_worker_health_config.py'
@@ -61,6 +62,12 @@ jobs:
             exit 1
           fi
           echo "Production correctly refused unmigrated database."
+      - name: Assert production image contains native PostgreSQL recovery utilities
+        run: |
+          docker run --rm --entrypoint pg_dump networkpulse-deployment-ci:latest --version
+          docker run --rm --entrypoint pg_restore networkpulse-deployment-ci:latest --version
+          docker run --rm --entrypoint python networkpulse-deployment-ci:latest \
+            -c "import networkpulse.recovery; print('Recovery CLI is packaged')"
 
       - name: Validate pinned Caddy reverse proxy
         run: |

@@ -143,3 +143,7 @@ the real IdP, HTTPS/certificate issuance, backups/restore, Redis outages,
 high-volume DB performance, hardening, on-call alerts, user permissions and
 external penetration test. CI is a deployment configuration/smoke check, not
 a proof of live site readiness.
+
+## Verified backup and isolated restore drill
+
+The production maintenance workflow now has native PostgreSQL and SQLite **snapshot, SHA-256 verification and audited restore-drill** commands, implemented in `networkpulse/recovery.py`. See [Disaster Recovery Drill](DISASTER_RECOVERY_DRILL.md) before any schema upgrade or site cutover. This is *not* a production restore endpoint: it strictly refuses nonempty PostgreSQL targets, any existing SQLite target, and target database names without `_drill_` or `_drill`. A separately approved operator is responsible for database provisioning, RPO/RTO, secrets, encryption, offsite backups and incident failover. Never commit snapshot bytes or approval receipts containing sensitive host information.

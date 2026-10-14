@@ -46,6 +46,11 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: python -m pip install -e '.[dev,postgres,streaming]'
+      - name: Install native PostgreSQL backup/restore client for CI recovery drills
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+          pg_dump --version && pg_restore --version
       - name: Check formatting and common correctness issues
         run: ruff check networkpulse tests alembic
       - name: Run automated tests with coverage
