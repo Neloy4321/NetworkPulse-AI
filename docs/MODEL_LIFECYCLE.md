@@ -257,8 +257,11 @@ Production API startup and the production Compose streaming/MLOps processes
 now verify the actual deployed model SHA-256 against BOTH the pinned
 `MODEL_SHA256` and the registry's active candidate before loading/scoring.
 They refuse missing registry state, unresolved release journal, synthetic
-candidate records, tampered registry artifacts, or incompatible feature
-contracts. Set `NETWORKPULSE_MODEL_REGISTRY_ROOT=/app/data/registry` on
+candidate records, tampered registry artifacts, incompatible feature
+contracts or missing signed production approval history (NP-REL-006).
+The preflight reads the operator-controlled registry's recorded signature
+verification result; it does not revalidate the offline signature or claim
+the assertions in the evidence are factually true. Set `NETWORKPULSE_MODEL_REGISTRY_ROOT=/app/data/registry` on
 every scoring and MLOps service, with the same `model_data` volume mounted.
 The production Compose TLS overlay configures this for API, streaming worker
 and MLOps worker.
@@ -275,7 +278,8 @@ networkpulse model-registry preflight \
 
 Failure codes: `NP-REL-001` missing/invalid pin, `NP-REL-002` missing
 registry root, `NP-REL-003` registry/pin disagreement, `NP-REL-004`
-incompatible feature contract and `NP-REL-005` synthetic/demo record.
+incompatible feature contract, `NP-REL-005` synthetic/demo record,
+and `NP-REL-006` missing recorded signed production approval.
 Registry integrity/journal errors fail closed as before. This does not
 authorize an unsigned release; the registry must already reflect the signed,
 operator-approved deployment. Registry files and model artifacts must be

@@ -347,8 +347,22 @@ class ModelRegistry:
         # A stale or modified candidate cannot be treated as a verified release.
         # The deployed file alone is not sufficient to establish registry integrity.
         self._valid_artifact(active)
+        # The catalog is operator-controlled local state. This field reports
+        # whether the active release was installed through the signed
+        # production gate; it does not re-verify offline signatures at runtime.
+        history = data.get('history')
+        latest = history[-1] if isinstance(history, list) and history else {}
+        proof = latest.get('validation_receipt') if isinstance(latest, dict) else None
+        production_approved = (
+            latest.get('to') == active
+            and latest.get('production_policy') is True
+            and isinstance(proof, dict)
+            and proof.get('signature_verified') is True
+            and proof.get('candidate_sha256') == record['sha256']
+        )
         return {
             'active': active, 'sha256': record['sha256'],
+            'production_approved': production_approved,
             'feature_version': record.get('feature_version'),
             'synthetic_only': record.get('synthetic_only', False),
             'consistent': True,

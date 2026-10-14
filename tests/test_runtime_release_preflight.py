@@ -13,7 +13,7 @@ from networkpulse.streaming.redis_streams import process_events
 
 
 @pytest.fixture
-def active_release(app_settings, tmp_path):
+def active_release(app_settings, tmp_path, ci_release_signer):
     from networkpulse.detector import Detector
     model = Detector.load(app_settings.model_path)
     model.metadata["source"] = "trusted_ci_fixture_not_independently_validated"
@@ -21,7 +21,9 @@ def active_release(app_settings, tmp_path):
     registry = ModelRegistry(tmp_path / "registry")
     registry.register("candidate-ci", app_settings.model_path)
     deployed = tmp_path / "deployed.joblib"
-    registry.promote("candidate-ci", deployed)
+    approval, trust = ci_release_signer(sha256(app_settings.model_path))
+    registry.promote("candidate-ci", deployed, production=True,
+                     evidence_path=approval, trust_store=trust)
     return registry, deployed, sha256(deployed)
 
 
@@ -108,3 +110,17 @@ def test_development_opt_in_enforces_registry(active_release, app_settings, monk
     assert require_runtime_release(settings)["verified"]
     with pytest.raises(ValueError, match="NP-REL-003"):
         require_runtime_release(replace(settings, model_sha256="f" * 64))
+
+def test_unsigned_local_promotion_is_not_production_approval(app_settings, tmp_path):
+    from networkpulse.detector import Detector
+    model = Detector.load(app_settings.model_path)
+    model.metadata["source"] = "ci_only_non_site_fixture"
+    model.save(app_settings.model_path)
+    registry = ModelRegistry(tmp_path / "unsigned-registry")
+    registry.register("unsigned", app_settings.model_path)
+    deployed = tmp_path / "unsigned-deployed.joblib"
+    registry.promote("unsigned", deployed)  # Allowed for developer, NOT production.
+    with pytest.raises(ValueError, match="NP-REL-006"):
+        verify_deployment_model(model_path=deployed,
+                                expected_sha256=sha256(deployed),
+                                registry_root=registry.root)

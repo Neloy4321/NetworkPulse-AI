@@ -31,6 +31,8 @@ def verify_deployment_model(*, model_path: Path, expected_sha256: str,
         raise ValueError("NP-REL-004: active model feature contract is incompatible")
     if checked.get("synthetic_only"):
         raise ValueError("NP-REL-005: synthetic/demo registry release refused")
+    if checked.get("production_approved") is not True:
+        raise ValueError("NP-REL-006: active release lacks recorded signed production approval")
     return {
         "verified": True, "active": checked["active"],
         "sha256": checked["sha256"], "feature_version": FEATURE_VERSION,

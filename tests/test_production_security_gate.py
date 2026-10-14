@@ -24,7 +24,7 @@ def test_manual_settings_cannot_enable_browser_login_in_local_mode(app_settings)
         create_app(replace(app_settings, browser_oidc_enabled=True))
 
 
-def test_production_app_disables_documentation_at_source(monkeypatch, app_settings, tmp_path):
+def test_production_app_disables_documentation_at_source(monkeypatch, app_settings, tmp_path, ci_release_signer):
     """Public gateway restrictions alone must not protect Swagger/OpenAPI."""
     from fastapi.testclient import TestClient
 
@@ -63,7 +63,9 @@ def test_production_app_disables_documentation_at_source(monkeypatch, app_settin
     registry = ModelRegistry(tmp_path / "registry")
     registry.register("access-control-fixture", target)
     deployed = tmp_path / "active-security-fixture.joblib"
-    registry.promote("access-control-fixture", deployed)
+    approval, trust = ci_release_signer(sha256(target), change_id="ci-only-doc-access")
+    registry.promote("access-control-fixture", deployed, production=True,
+                     evidence_path=approval, trust_store=trust)
     config = replace(config, model_path=deployed, model_sha256=sha256(deployed))
     monkeypatch.setenv("NETWORKPULSE_MODEL_REGISTRY_ROOT", str(registry.root))
     with TestClient(create_app(config), base_url="https://soc.example.test") as client:
