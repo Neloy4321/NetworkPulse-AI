@@ -1,0 +1,53 @@
+name: Authorized local OWASP ZAP baseline
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/authorized-dast.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  local-passive-dast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NETWORKPULSE_API_KEY: ci-internal-demo-only-nonproduction
+      DATABASE_URL: sqlite:///./data/dast-networkpulse.db
+      MODEL_PATH: data/dast-model.joblib
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prepare synthetic-only isolated test API
+        run: |
+          python -m pip install -e .
+          mkdir -p data
+          networkpulse db upgrade
+          networkpulse bootstrap --seed 42 --count 250
+          uvicorn networkpulse.api:create_app --factory --host 127.0.0.1 --port 8000             > /tmp/networkpulse-zap-api.log 2>&1 &
+          echo "$!" > /tmp/networkpulse-zap-api.pid
+          for i in $(seq 1 30); do
+            if curl --silent --fail http://127.0.0.1:8000/health/ready; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Passive OWASP ZAP scan of ephemeral localhost only
+        run: |
+          mkdir -p dast-reports
+          docker run --rm --network host --user root             -v "$PWD/dast-reports:/zap/wrk:rw"             ghcr.io/zaproxy/zaproxy:stable             zap-baseline.py -t http://127.0.0.1:8000 -m 1 -I             -J baseline.json -r baseline.html
+      - name: Upload scoped scan evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: authorized-local-zap-baseline
+          path: dast-reports/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Stop disposable test service
+        if: always()
+        run: |
+          if [ -f /tmp/networkpulse-zap-api.pid ]; then
+            kill "$(cat /tmp/networkpulse-zap-api.pid)" || true
+          fi
+          rm -f data/dast-networkpulse.db data/dast-model.joblib
