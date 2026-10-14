@@ -170,17 +170,27 @@ def test_sqlite_drill_rejects_existing_target_without_mutation(tmp_path):
 @pytest.mark.skipif(not os.getenv("PG_TEST_DATABASE_URL"), reason="Real PostgreSQL CI required")
 def test_postgres_native_pg_dump_restore_drill_retains_soc_audit(tmp_path):
     from sqlalchemy.engine import make_url
-    src = os.environ["PG_TEST_DATABASE_URL"]
-    upgrade_database(src)
-    _seed_audited_rows(src)
-    db_name = "networkpulse_ci_drill_" + uuid.uuid4().hex[:10]
-    target = str(make_url(src).set(database=db_name))
-    admin = create_engine(src, isolation_level="AUTOCOMMIT")
+
+    admin_url = os.environ["PG_TEST_DATABASE_URL"]
+    base = make_url(admin_url)
+    suffix = uuid.uuid4().hex[:10]
+    source_name = "networkpulse_ci_drsource_" + suffix
+    target_name = "networkpulse_ci_drill_" + suffix
+    # SQLAlchemy URL.__str__() REDACTS passwords by design. Explicitly
+    # restore full credentials ONLY for internal DB connections, never logs.
+    source = base.set(database=source_name).render_as_string(hide_password=False)
+    target = base.set(database=target_name).render_as_string(hide_password=False)
+    admin = create_engine(admin_url, isolation_level="AUTOCOMMIT")
     try:
         with admin.connect() as conn:
-            conn.execute(text(f'CREATE DATABASE "{db_name}"'))
+            conn.execute(text(f'CREATE DATABASE "{source_name}"'))
+            conn.execute(text(f'CREATE DATABASE "{target_name}"'))
+        # A distinct source DB avoids polluting the shared CI service used
+        # by ingestion/concurrency tests elsewhere in the test suite.
+        upgrade_database(source)
+        _seed_audited_rows(source)
         backup = tmp_path / "recovery.custom"
-        receipt = create_snapshot(src, backup)
+        receipt = create_snapshot(source, backup)
         assert verify_snapshot(backup)["backup_sha256"] == receipt["backup_sha256"]
         recovered = recovery_drill(
             backup, target,
@@ -189,9 +199,9 @@ def test_postgres_native_pg_dump_restore_drill_retains_soc_audit(tmp_path):
         )
         assert recovered["drill"] == "completed_verified"
         assert recovered["revision"] == "0006_behavior_incidents"
-        assert recovered["counts"]["behavior_incident_audit"] >= 1
-        assert recovered["counts"]["mlops_drift_runs"] >= 1
-        assert recovered["counts"]["network_events"] >= 1
+        assert recovered["counts"]["behavior_incident_audit"] == 1
+        assert recovered["counts"]["mlops_drift_runs"] == 1
+        assert recovered["counts"]["network_events"] == 1
         with pytest.raises(ValueError, match="empty"):
             recovery_drill(
                 backup, target, expected_sha256=receipt["backup_sha256"],
@@ -205,5 +215,6 @@ def test_postgres_native_pg_dump_restore_drill_retains_soc_audit(tmp_path):
         maker.kw["bind"].dispose()
     finally:
         with admin.connect() as conn:
-            conn.execute(text(f'DROP DATABASE IF EXISTS "{db_name}" WITH (FORCE)'))
+            conn.execute(text(f'DROP DATABASE IF EXISTS "{target_name}" WITH (FORCE)'))
+            conn.execute(text(f'DROP DATABASE IF EXISTS "{source_name}" WITH (FORCE)'))
         admin.dispose()
