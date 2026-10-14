@@ -59,6 +59,8 @@ def security_middleware_factory(*, max_body_bytes: int, per_minute: int,
         response.headers['Referrer-Policy'] = 'no-referrer'
         response.headers['X-Frame-Options'] = 'DENY'
         response.headers['Permissions-Policy'] = 'camera=(), microphone=(), geolocation=()'
+        response.headers['Cross-Origin-Opener-Policy'] = 'same-origin'
+        response.headers['Cross-Origin-Resource-Policy'] = 'same-origin'
         if https:
             response.headers['Strict-Transport-Security'] = 'max-age=31536000'
         if path not in {'/docs', '/redoc'} and not path.startswith('/docs/'):
@@ -68,7 +70,8 @@ def security_middleware_factory(*, max_body_bytes: int, per_minute: int,
                 "script-src 'self'; style-src 'self' 'unsafe-inline'; "
                 "connect-src 'self'; img-src 'self' data:"
             )
-        if path == '/' or path.startswith('/api/') or path == '/metrics':
+        if (path == '/' or path.startswith('/api/') or path.startswith('/auth/')
+                or path == '/metrics'):
             response.headers['Cache-Control'] = 'no-store'
         return response
 
