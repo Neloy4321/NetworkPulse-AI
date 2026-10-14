@@ -54,13 +54,32 @@ class ModelRegistry:
 
     def register(self, name: str, model_path: Path, *, min_f1: float = 0.0,
                  max_alert_fraction: float = 1.0,
-                 max_fpr_upper_95: float | None = None) -> dict:
+                 max_fpr_upper_95: float | None = None,
+                 release_directory: Path | None = None) -> dict:
         if not name or len(name) > 80 or not all(c.isascii() and (c.isalnum() or c in '-_') for c in name):
             raise ValueError('candidate name must be 1-80 alphanumeric/hyphen/underscore characters')
         if not 0 <= min_f1 <= 1 or not 0 < max_alert_fraction <= 1:
             raise ValueError('invalid validation gates')
         if max_fpr_upper_95 is not None and not 0 < max_fpr_upper_95 <= 1:
             raise ValueError('invalid held-out FPR upper confidence gate')
+        release_lineage = None
+        if release_directory is not None:
+            # SHA-check the candidate release BEFORE unpickling the trusted
+            # operator-provided artifact. A checksum alone is not authenticity.
+            from networkpulse.training_release import verify_candidate
+            checked = verify_candidate(release_directory)
+            if checked["candidate"] != name or sha256(model_path) != checked["sha256"]:
+                raise ValueError("registered candidate differs from its release manifest")
+            manifest_file = Path(release_directory) / "manifest.json"
+            manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+            release_lineage = {
+                "manifest_sha256": sha256(manifest_file),
+                "raw_source_sha256": manifest["dataset"]["raw_source_sha256"],
+                "input_identity_sha256": manifest["dataset"]["event_identity_sha256"],
+                "functional_holdout_sha256": manifest["model"]["functional_holdout_sha256"],
+                "selection": manifest["dataset"]["selection"],
+                "provenance_independently_verified": False,
+            }
         metadata = Detector.load(model_path).metadata  # TRUSTED LOCAL FILES ONLY.
         metrics = metadata.get('metrics')
         if not isinstance(metrics, dict):
@@ -92,6 +111,7 @@ class ModelRegistry:
                 'gate': {'min_f1': min_f1, 'max_alert_fraction': max_alert_fraction,
                          'max_fpr_upper_95': max_fpr_upper_95},
                 'synthetic_only': 'synthetic' in str(metadata.get('source', '')).lower(),
+                'release_lineage': release_lineage,
             }
             registry['candidates'][name] = record
             _write_json(self.catalog, registry)
