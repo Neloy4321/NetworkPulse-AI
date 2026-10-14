@@ -183,9 +183,7 @@ def test_real_redis_collector_survives_rotation_and_backpressure(tmp_path):
     import os
     import uuid
     import redis
-    from networkpulse.streaming.collector import ContinuityError
-
-    events = sample_flows(110, seed=2609)[:105]
+    events = sample_flows(110, seed=2609)[:102]
     active = tmp_path / "conn.jsonl"
     active.write_text("".join(_as_lines(events)))
     client = redis.Redis.from_url(os.environ["REDIS_TEST_URL"], decode_responses=True)
@@ -202,9 +200,11 @@ def test_real_redis_collector_survives_rotation_and_backpressure(tmp_path):
             collector.poll_once()
         assert client.xlen(key) == 100
         # Only committed queue writes may be reflected in the checkpoint.
-        assert json.loads((tmp_path / "offset.json").read_text())["offset"] == len(
-            "".join(_as_lines(events[:100])).encode()
-        )
+        # The old inode has been drained; the new file is checkpointed
+        # at offset zero before its first (backpressured) enqueue.
+        saved = json.loads((tmp_path / "offset.json").read_text())
+        assert saved["offset"] == 0
+        assert saved["identity"] == [active.stat().st_dev, active.stat().st_ino]
         consumed = []
 
         def handler(batch):
@@ -217,8 +217,8 @@ def test_real_redis_collector_survives_rotation_and_backpressure(tmp_path):
                 recover=False, block_ms=5,
             )
             assert outcome["retried"] == outcome["dead_lettered"] == 0
-        assert collector.poll_once()["published"] == 7
-        assert client.xlen(key) == 7
+        assert collector.poll_once()["published"] == 2
+        assert client.xlen(key) == 2
         assert collector.poll_once()["published"] == 0
         assert len(consumed) == 100
     finally:
