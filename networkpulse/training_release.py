@@ -16,7 +16,7 @@ from datetime import timezone
 from pathlib import Path
 
 from networkpulse.data_quality import quality_report
-from networkpulse.detector import Detector, train
+from networkpulse.detector import train
 from networkpulse.features import FEATURE_VERSION
 from networkpulse.model_registry import sha256
 from networkpulse.schemas import FlowEvent
