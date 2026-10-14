@@ -16,6 +16,7 @@ jobs:
     env:
       POSTGRES_PASSWORD: ci-only-unused-strong-value
       NETWORKPULSE_API_KEY: ci-only-unused-strong-value
+      MODEL_SHA256: "0000000000000000000000000000000000000000000000000000000000000000"
       SECURITY_REDIS_PASSWORD: 0123456789abcdef0123456789abcdef
       NETWORKPULSE_DOMAIN: soc.example.test
       NETWORKPULSE_OIDC_ISSUER: https://issuer.example.test/realm
