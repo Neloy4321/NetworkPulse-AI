@@ -272,6 +272,95 @@ async function triageBehaviorFinding(id) {
   } catch (err) { toast('Case review failed: ' + err.message); }
 }
 
+let lastIncidentsFetch = 0;
+async function refreshIncidents(force = false) {
+  if (!force && Date.now() - lastIncidentsFetch < 30000) return;
+  lastIncidentsFetch = Date.now();
+  try {
+    const result = await getJson('/api/v1/intelligence/incidents?limit=30');
+    const body = $('incident-body');
+    body.replaceChildren();
+    for (const item of result.incidents) {
+      const row = document.createElement('tr');
+      for (const value of [
+        item.hour_start_utc.slice(0, 16).replace('T', ' '),
+        item.source_ip, String(item.window_count),
+        item.flow_count + ' / ' + item.flagged_flows,
+        item.signals.join(', '), item.status.replace('_', ' ')
+      ]) {
+        const cell = document.createElement('td');
+        cell.textContent = value;
+        row.append(cell);
+      }
+      const action = document.createElement('td');
+      const inspect = document.createElement('button');
+      inspect.type = 'button'; inspect.textContent = 'TIMELINE';
+      inspect.addEventListener('click', () => inspectIncident(item.id));
+      const review = document.createElement('button');
+      review.type = 'button'; review.textContent = 'TRIAGE';
+      review.addEventListener('click', () => triageIncident(item.id));
+      action.append(inspect, review); row.append(action); body.append(row);
+    }
+    if (!result.incidents.length) {
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.colSpan = 7; cell.textContent = 'No multiple-window episodes materialized yet.';
+      row.append(cell); body.append(row);
+    }
+    $('incident-status').textContent = result.incidents.length + ' correlated episodes shown' +
+      (result.has_more ? ' (more via API)' : '') +
+      ' · UTC source-hour groups, not confirmed attacks.';
+  } catch (err) { $('incident-status').textContent = 'Incident API unavailable: ' + err.message; }
+}
+async function inspectIncident(id) {
+  try {
+    const [evidence, history] = await Promise.all([
+      getJson('/api/v1/intelligence/incidents/' + encodeURIComponent(id) + '/evidence'),
+      getJson('/api/v1/intelligence/incidents/' + encodeURIComponent(id) + '/history')
+    ]);
+    $('incident-detail').hidden = false;
+    $('incident-detail-heading').textContent =
+      'Source ' + evidence.incident.source_ip + ' · ' + evidence.incident.window_count +
+      ' evidence windows · ' + evidence.incident.status;
+    const steps = $('incident-evidence'); steps.replaceChildren();
+    for (const f of evidence.timeline) {
+      const li = document.createElement('li');
+      li.textContent = f.window_start_utc + ' · ' + f.patterns.join(', ') +
+        ' · ' + f.flow_count + ' flows; ' + f.flagged_flows + ' ML flags';
+      steps.append(li);
+    }
+    const changes = $('incident-history'); changes.replaceChildren();
+    for (const h of history) {
+      const li = document.createElement('li');
+      li.textContent = h.changed_at + ' · ' + h.actor + ' · ' +
+        h.old_status + ' → ' + h.new_status + ' · ' + h.note;
+      changes.append(li);
+    }
+    $('incident-detail').scrollIntoView({behavior: 'smooth', block: 'nearest'});
+  } catch (err) { toast('Incident evidence unavailable: ' + err.message); }
+}
+async function triageIncident(id) {
+  const status = prompt('Incident status: open | investigating | resolved | false_positive', 'investigating');
+  if (status === null) return;
+  if (!['open', 'investigating', 'resolved', 'false_positive'].includes(status)) {
+    toast('Invalid incident status'); return;
+  }
+  const note = prompt('Reason for incident review (3–1500 characters)');
+  if (!note || note.trim().length < 3 || note.length > 1500) {
+    toast('Valid audit reason is required'); return;
+  }
+  const headers = await mutationHeaders();
+  if (!headers) return;
+  try {
+    await getJson('/api/v1/intelligence/incidents/' + encodeURIComponent(id), {
+      method: 'PATCH', headers, body: JSON.stringify({status, note: note.trim()})
+    });
+    await refreshIncidents(true);
+    await inspectIncident(id);
+    toast('Incident review and audit committed');
+  } catch (err) { toast('Incident review failed: ' + err.message); }
+}
+
 let lastMLOpsFetch = 0;
 async function refreshMLOps(force = false) {
   if (!force && Date.now() - lastMLOpsFetch < 30000) return;
@@ -375,6 +464,7 @@ async function refresh() {
     latestTrends = trends; drawTimeline(trends); renderAlerts(alerts);
     await refreshBehavior();
     await refreshBehaviorFindings();
+    await refreshIncidents();
     await refreshMLOps();
     $('alerts-page').textContent = `Page ${Math.floor(alertsOffset / alertsLimit)+1}`;
     $('alerts-prev').disabled = alertsOffset === 0;

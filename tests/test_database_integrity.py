@@ -16,7 +16,7 @@ from networkpulse.storage import Alert, NetworkEvent, build_sessions
 
 def test_new_schema_and_64_bit_counters(tmp_path):
     url = "sqlite:///" + str(tmp_path / "new.db")
-    assert upgrade_database(url)["revision"] == "0005_mlops_drift_runs"
+    assert upgrade_database(url)["revision"] == "0006_behavior_incidents"
     session_factory = build_sessions(url)
     model = train(sample_flows(140, seed=11), seed=11)
     large = sample_flows(100, seed=2)[0].model_copy(update={
@@ -51,7 +51,7 @@ def test_legacy_database_upgrade_preserves_events_alerts(tmp_path):
         c.execute(text("DROP TABLE alembic_version"))
     eng.dispose()
     result = upgrade_database(url)
-    assert result["revision"] == "0005_mlops_drift_runs"
+    assert result["revision"] == "0006_behavior_incidents"
     assert result["sqlite_backup"] and Path(result["sqlite_backup"]).is_file()
     maker = build_sessions(url)
     with maker() as session:
@@ -97,8 +97,8 @@ def test_concurrent_duplicate_ingestion_is_atomic(tmp_path):
 
 def test_repeated_upgrade_is_safe(tmp_path):
     url = "sqlite:///" + str(tmp_path / "new.db")
-    assert upgrade_database(url)["revision"] == "0005_mlops_drift_runs"
-    assert upgrade_database(url)["revision"] == "0005_mlops_drift_runs"
+    assert upgrade_database(url)["revision"] == "0006_behavior_incidents"
+    assert upgrade_database(url)["revision"] == "0006_behavior_incidents"
 
 
 def test_backup_and_restore_preserves_alerts(tmp_path):
