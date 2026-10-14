@@ -24,4 +24,4 @@ USER networkpulse
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready',timeout=4)"
-CMD ["sh", "-c", "python -m networkpulse.cli db upgrade && python -m networkpulse.cli bootstrap && uvicorn networkpulse.api:create_app --factory --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-ec", "python -m networkpulse.cli db upgrade; if [ \"${NETWORKPULSE_DEPLOYMENT:-development}\" = production ]; then test -s /app/data/model.joblib || { echo \"Production requires a prevalidated model\"; exit 1; }; test -n \"${MODEL_SHA256:-}\" || { echo \"Production requires MODEL_SHA256\"; exit 1; }; else python -m networkpulse.cli bootstrap; fi; exec uvicorn networkpulse.api:create_app --factory --host 0.0.0.0 --port 8000"]

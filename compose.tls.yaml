@@ -22,6 +22,7 @@ services:
         condition: service_healthy
     environment:
       NETWORKPULSE_DEPLOYMENT: production
+      MODEL_SHA256: ${MODEL_SHA256:?Prevalidated production model SHA-256 required}
       NETWORKPULSE_AUTH_MODE: oidc
       NETWORKPULSE_BROWSER_OIDC: "true"
       NETWORKPULSE_OIDC_ISSUER: ${NETWORKPULSE_OIDC_ISSUER:?Set trusted HTTPS issuer}
