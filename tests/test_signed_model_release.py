@@ -71,7 +71,8 @@ def _registry_two(tmp_path):
     a = train(events, seed=914, source="trusted_real_capture_fixture")
     b = train(events, seed=916, source="trusted_real_capture_fixture")
     pa, pb = tmp_path / "a.joblib", tmp_path / "b.joblib"
-    a.save(pa); b.save(pb)
+    a.save(pa)
+    b.save(pb)
     registry = ModelRegistry(tmp_path / "registry")
     registry.register("baseline", pa)
     registry.register("challenger", pb)
