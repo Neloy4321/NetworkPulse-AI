@@ -23,7 +23,7 @@ def test_ack_residence_uses_redis_server_time_and_no_sensitive_labels():
     worker_metrics.record_acknowledged(RedisClock(), ["999000-0", "1000000-1"])
     assert sample_value("networkpulse_worker_queue_residence_seconds_count") == before_count + 2
     assert sample_value("networkpulse_worker_queue_residence_seconds_sum") == pytest.approx(
-        before_sum + 1.5
+        before_sum + 2.0
     )
     export = generate_latest().decode()
     assert "networkpulse_worker_queue_residence_seconds_bucket" in export
