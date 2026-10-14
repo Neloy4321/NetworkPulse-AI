@@ -134,6 +134,53 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=503, detail="Model not trained; run networkpulse bootstrap")
         return model
 
+    @app.get("/auth/login", include_in_schema=False)
+    def browser_login():
+        if browser is None:
+            raise HTTPException(404, detail="Browser login disabled")
+        location, state = browser.start()
+        response = RedirectResponse(location, status_code=302)
+        response.set_cookie(
+            STATE_COOKIE, state, max_age=300, secure=True, httponly=True,
+            samesite="lax", path="/",
+        )
+        return response
+
+    @app.get("/auth/callback", include_in_schema=False)
+    async def browser_callback(request: Request, code: str = Query(min_length=8, max_length=4096),
+                               state: str = Query(min_length=16, max_length=128)):
+        if browser is None:
+            raise HTTPException(404, detail="Browser login disabled")
+        pending = browser.consume(state, request.cookies.get(STATE_COOKIE))
+        token, ttl = await browser.exchange(code, pending, verifier)
+        session_id = browser.create_session(token, ttl)
+        response = RedirectResponse("/", status_code=303)
+        response.delete_cookie(STATE_COOKIE, path="/", secure=True, httponly=True)
+        response.set_cookie(
+            SESSION_COOKIE, session_id, max_age=ttl, secure=True, httponly=True,
+            samesite="lax", path="/",
+        )
+        return response
+
+    @app.get("/auth/session", include_in_schema=False)
+    def browser_session(request: Request):
+        if browser is None:
+            raise HTTPException(404, detail="Browser login disabled")
+        entry = browser.session(request.cookies.get(SESSION_COOKIE))
+        if entry is None:
+            raise HTTPException(401, detail="Session expired")
+        principal = verifier.verify(entry["token"])
+        return {"subject": principal.subject, "role": principal.role, "csrf_token": entry["csrf"]}
+
+    @app.post("/auth/logout", include_in_schema=False)
+    def browser_logout(request: Request, principal: Principal = Depends(require_identity)):
+        if browser is None or not request.cookies.get(SESSION_COOKIE):
+            raise HTTPException(401, detail="Browser session required")
+        browser.logout(request.cookies.get(SESSION_COOKIE))
+        response = Response(status_code=204)
+        response.delete_cookie(SESSION_COOKIE, path="/", secure=True, httponly=True)
+        return response
+
     @app.get("/", include_in_schema=False, dependencies=[Depends(read_scope)])
     def dashboard():
         return FileResponse(STATIC / "index.html")
