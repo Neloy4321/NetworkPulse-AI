@@ -404,7 +404,7 @@ def process_events(queue: FlowStream, consumer: str, *, settings, once: bool = F
             if any(outcome.values()):
                 # No IPs, flow payloads or credentials in operational logs.
                 print(json.dumps({"worker": "flow", **outcome}), flush=True)
-            if budget.degraded:
+            if budget.degraded and not stop_requested():
                 delay = budget.retry_delay(clock())
                 if delay:
                     sleeper(delay)
