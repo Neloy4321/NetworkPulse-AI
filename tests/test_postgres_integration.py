@@ -109,7 +109,7 @@ def test_postgres_concurrent_behavior_case_upserts_preserve_unique_incident():
 @pytest.mark.skipif(not os.getenv("PG_TEST_DATABASE_URL"), reason="No CI PostgreSQL service")
 def test_postgres_concurrent_mlops_snapshot_upsert():
     """Two monitoring workers must emit one exact immutable report."""
-    from datetime import datetime, timedelta, timezone
+    from datetime import timedelta
     from networkpulse.mlops_monitor import run_monitor
     from networkpulse.model_registry import sha256
     from networkpulse.storage import MLOpsDriftRun
