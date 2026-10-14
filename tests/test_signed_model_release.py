@@ -41,7 +41,7 @@ def trusted_signer(tmp_path):
             "payload": payload,
             "signature": base64.b64encode(secret.sign(canonical_bytes(payload))).decode(),
         }
-        document = tmp_path / "signed-approval.json"
+        document = tmp_path / ("signed-" + payload["change_id"] + ".json")
         document.write_text(json.dumps(envelope))
         return document
     return sign, trusted, trust_record
