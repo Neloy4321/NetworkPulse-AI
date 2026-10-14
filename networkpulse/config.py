@@ -30,6 +30,11 @@ class Settings:
         mode = os.getenv("NETWORKPULSE_AUTH_MODE", "local").lower()
         if mode == "local" and len(key) < 16:
             raise ValueError("NETWORKPULSE_API_KEY must contain at least 16 characters")
+        if mode == "local" and (
+            key != key.strip() or
+            key.lower().startswith(("change-this-", "replace-me-", "your-secret-", "example-"))
+        ):
+            raise ValueError("Do not deploy with a placeholder or padded local API key")
         if mode not in {"local", "oidc"}:
             raise ValueError("NETWORKPULSE_AUTH_MODE must be local or oidc")
         if mode == "oidc" and not all(os.getenv(x) for x in (
