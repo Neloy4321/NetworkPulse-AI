@@ -30,6 +30,24 @@ STATIC = Path(__file__).parent / "static"
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
+    if settings.deployment_mode == "production" and settings.auth_mode != "oidc":
+        raise ValueError("Production API requires OIDC access control")
+    if settings.deployment_mode == "production" and not settings.security_redis_url:
+        raise ValueError("Production API requires Redis-backed security")
+    redis_client = None
+    distributed_limiter = None
+    if settings.security_redis_url:
+        import redis
+        from networkpulse.security.distributed_limit import DistributedLimiter
+        redis_client = redis.Redis.from_url(
+            settings.security_redis_url, socket_connect_timeout=2,
+            socket_timeout=2, retry_on_timeout=False
+        )
+        redis_client.ping()  # Fail startup if the security store is unavailable.
+        distributed_limiter = DistributedLimiter(
+            redis_client, settings.mutation_rate_per_minute,
+            settings.global_rate_per_minute
+        )
     make_session = build_sessions(settings.database_url)
     # Persist models trained offline; do not auto-train on incoming production data.
     if settings.model_sha256 and settings.model_path.is_file():
@@ -47,6 +65,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             yield
         finally:
             make_session.kw["bind"].dispose()
+            if redis_client is not None:
+                redis_client.close()
 
     app = FastAPI(
         lifespan=lifespan,
@@ -56,7 +76,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.middleware("http")(metric_middleware)
     app.middleware("http")(security_middleware_factory(
-        max_body_bytes=settings.max_body_bytes, per_minute=settings.mutation_rate_per_minute))
+        max_body_bytes=settings.max_body_bytes, per_minute=settings.mutation_rate_per_minute,
+        distributed_limiter=distributed_limiter))
 
     def require_identity(authorization: Annotated[str | None, Header()] = None) -> Principal:
         if verifier is None:

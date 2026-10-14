@@ -47,7 +47,8 @@ class MutationLimiter:
             return True
 
 
-def security_middleware_factory(*, max_body_bytes: int, per_minute: int):
+def security_middleware_factory(*, max_body_bytes: int, per_minute: int,
+                                distributed_limiter=None):
     """Security policy for HTTP resources, including early rejected responses."""
     if max_body_bytes < 1024:
         raise ValueError('MAX_BODY_BYTES must be >= 1024')
@@ -89,7 +90,9 @@ def security_middleware_factory(*, max_body_bytes: int, per_minute: int):
             # Admit before reading a potentially expensive chunked body. A
             # known oversize Content-Length was already rejected without charge.
             peer = request.client.host if request.client else 'unknown'
-            if not limiter.admit(peer):
+            allowed = (distributed_limiter.admit(peer) if distributed_limiter is not None
+                       else limiter.admit(peer))
+            if not allowed:
                 return rejected('Mutation rate limit exceeded', 429,
                                 {'Retry-After': '60'})
             # Header-less/chunked messages are enforced while streaming, not after
