@@ -104,3 +104,8 @@ calibration quantiles on a reserved later UNSW capture (1,290 sampled flows).
 A higher threshold reduced measured false positives but missed more attacks,
 and the observed benign FPR remained at least 8.81%. This is exploratory only,
 not a validated production release or automatic model promotion.
+
+
+## Security hardening October 2026
+
+Improved in-process rate limiter, HTTP response headers, spreadsheet-formula-safe CSV export, JWT bounds, demo secret validation, and on-change pip-audit/Bandit CI. See [milestone](SECURITY_HARDENING_MILESTONE.md). OIDC browser SSO, distributed limits, public HTTPS deployment and independent penetration testing remain incomplete.

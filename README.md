@@ -353,3 +353,8 @@ Planned, **not implemented**: Kafka/Redpanda + ClickHouse, Zeek/Suricata continu
 
 Real-data calibration policy experiment: [ML reliability milestone](docs/ML_RELIABILITY_MILESTONE.md).
 This is a held-out cyber-range sensitivity study, not a production-safe threshold or a promoted model.
+
+
+## October 2026 API security hardening
+
+Implemented bounded fail-closed rate buckets, response security headers, spreadsheet-safe SOC CSV exports, OIDC JWT bounds, placeholder-key rejection, and CI dependency/static security scanning. See [Security Milestone](docs/SECURITY_HARDENING_MILESTONE.md) and [Threat Model](docs/SECURITY_THREAT_MODEL.md). **Interactive browser OIDC/PKCE, production TLS and independent penetration testing remain open.**
