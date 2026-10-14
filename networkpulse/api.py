@@ -44,13 +44,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     if settings.browser_oidc_enabled and settings.auth_mode != "oidc":
         raise ValueError("Browser login requires OIDC mode")
     if settings.deployment_mode == "production":
-        from networkpulse.security.deployment import validate_production_urls
-        validate_production_urls(settings)
-    if settings.deployment_mode == "production":
         if not settings.browser_oidc_enabled:
             raise ValueError("Production API requires browser OIDC login")
         if not settings.model_sha256 or not settings.model_path.is_file():
             raise ValueError("Production API requires checksum-pinned trusted model")
+        from networkpulse.security.deployment import validate_production_urls
+        validate_production_urls(settings)
     redis_client = None
     distributed_limiter = None
     if settings.security_redis_url:
