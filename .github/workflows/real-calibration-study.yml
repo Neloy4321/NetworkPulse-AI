@@ -1,0 +1,51 @@
+name: Predeclared real-data FPR calibration study
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'networkpulse/evaluation/calibration_study.py'
+      - 'tests/test_calibration_study.py'
+      - '.github/workflows/real-calibration-study.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unsw-calibration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -e . 'gdown>=5.2,<6'
+      - name: Download shared authorized UNSW raw ZIP to ephemeral runner
+        run: |
+          python - <<'PY'
+          import gdown
+          from pathlib import Path
+          target = Path("dataset-source.zip")
+          file_id = "16eIgENKYpiLwJNHZWRrYdPfGj6AOOtkT"
+          if not gdown.download(id=file_id, output=str(target), quiet=True, fuzzy=True):
+              raise RuntimeError("source ZIP not downloaded")
+          if target.stat().st_size != 586382286:
+              raise RuntimeError("size mismatch: source changed or incomplete")
+          PY
+      - name: Evaluate all prespecified calibration quantiles
+        run: >
+          python -m networkpulse.evaluation.calibration_study
+          --zip dataset-source.zip
+          --output reports-real/calibration-study.json
+      - name: Upload aggregated scores only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-unsw-calibration-study
+          path: reports-real/calibration-study.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Remove raw data before runner teardown
+        if: always()
+        run: rm -f dataset-source.zip
