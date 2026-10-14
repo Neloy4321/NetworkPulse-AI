@@ -17,7 +17,7 @@ def test_upgrade_v02_to_v04_keeps_event_and_alert(tmp_path):
         connection.execute(text("""INSERT INTO alerts (id, event_id, severity, status, reasons)
             VALUES (88, 'v02-event', 'high', 'open', '[]')"""))
     engine.dispose()
-    assert upgrade_database(url)['revision'] == '0003_soc_accountability'
+    assert upgrade_database(url)['revision'] == '0004_behavior_findings'
     maker = build_sessions(url)
     with maker() as session:
         from networkpulse.storage import Alert, NetworkEvent

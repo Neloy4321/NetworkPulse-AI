@@ -212,6 +212,66 @@ async function triage(id) {
     if (activeCaseId === id) await showCase(id);
   } catch (err) { toast('Triage failed: ' + err.message); }
 }
+let lastBehaviorFindingsFetch = 0;
+async function refreshBehaviorFindings(force = false) {
+  if (!force && Date.now() - lastBehaviorFindingsFetch < 30000) return;
+  lastBehaviorFindingsFetch = Date.now();
+  try {
+    const result = await getJson('/api/v1/intelligence/findings?limit=30');
+    const tbody = $('finding-body');
+    tbody.replaceChildren();
+    if (!result.findings.length) {
+      const tr = document.createElement('tr'), td = document.createElement('td');
+      td.colSpan = 7; td.textContent = 'No persisted behavioral cases yet.';
+      tr.append(td); tbody.append(tr);
+    }
+    for (const item of result.findings) {
+      const tr = document.createElement('tr');
+      const values = [
+        item.window_start_utc.slice(0, 16).replace('T', ' '),
+        item.source_ip, item.severity, item.patterns.join(', '),
+        item.status.replace('_', ' '), item.assigned_to || 'Unassigned'
+      ];
+      for (const value of values) {
+        const cell = document.createElement('td');
+        cell.textContent = value; // Never interpret stored event text as HTML.
+        tr.append(cell);
+      }
+      const action = document.createElement('td');
+      const edit = document.createElement('button');
+      edit.type = 'button'; edit.textContent = 'TRIAGE';
+      edit.addEventListener('click', () => triageBehaviorFinding(item.id));
+      action.append(edit); tr.append(action); tbody.append(tr);
+    }
+    $('finding-status').textContent = result.findings.length +
+      ' cases shown' + (result.has_more ? ' (more through API)' : '') +
+      ' · persisted status/assignment · heuristic evidence only.';
+  } catch (err) {
+    $('finding-status').textContent = 'Behavior cases unavailable: ' + err.message;
+  }
+}
+async function triageBehaviorFinding(id) {
+  const status = prompt('New status: open | investigating | resolved | false_positive',
+                        'investigating');
+  if (status === null) return;
+  if (!['open', 'investigating', 'resolved', 'false_positive'].includes(status)) {
+    toast('Unsupported case status'); return;
+  }
+  const note = prompt('Reason for this change (3–1500 characters)');
+  if (!note || note.trim().length < 3 || note.length > 1500) {
+    toast('A valid audit reason is required'); return;
+  }
+  const headers = await mutationHeaders();
+  if (!headers) return;
+  try {
+    await getJson('/api/v1/intelligence/findings/' + encodeURIComponent(id), {
+      method: 'PATCH', headers, body: JSON.stringify({status, note: note.trim()})
+    });
+    await refreshBehaviorFindings(true);
+    toast('Behavior case reviewed and audit recorded.');
+  } catch (err) { toast('Case review failed: ' + err.message); }
+}
+
 let lastBehaviorFetch = 0;
 async function refreshBehavior(force = false) {
   if (!force && Date.now() - lastBehaviorFetch < 30000) return;
@@ -291,6 +351,7 @@ async function refresh() {
     protocolChart(summary.protocols, summary.flows);
     latestTrends = trends; drawTimeline(trends); renderAlerts(alerts);
     await refreshBehavior();
+    await refreshBehaviorFindings();
     $('alerts-page').textContent = `Page ${Math.floor(alertsOffset / alertsLimit)+1}`;
     $('alerts-prev').disabled = alertsOffset === 0;
     $('alerts-next').disabled = alerts.length < alertsLimit;

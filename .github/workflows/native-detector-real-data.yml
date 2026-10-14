@@ -8,6 +8,9 @@ on:
       - 'tests/test_real_unsw_canonical.py'
       - 'tools/real_data_security_e2e.py'
       - 'networkpulse/behavior.py'
+      - 'networkpulse/behavior_cases.py'
+      - 'networkpulse/storage.py'
+      - 'alembic/versions/0004_behavior_findings.py'
       - 'networkpulse/api.py'
   pull_request:
     branches: [main]
@@ -17,6 +20,9 @@ on:
       - 'tests/test_real_unsw_canonical.py'
       - 'tools/real_data_security_e2e.py'
       - 'networkpulse/behavior.py'
+      - 'networkpulse/behavior_cases.py'
+      - 'networkpulse/storage.py'
+      - 'alembic/versions/0004_behavior_findings.py'
       - 'networkpulse/api.py'
   workflow_dispatch:
 permissions:

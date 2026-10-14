@@ -17,7 +17,7 @@ from networkpulse.storage import Alert, NetworkEvent, build_sessions
 @pytest.mark.skipif(not os.getenv("PG_TEST_DATABASE_URL"), reason="No CI PostgreSQL service")
 def test_postgres_migration_bigint_and_upsert_contention():
     url = os.environ["PG_TEST_DATABASE_URL"]
-    assert upgrade_database(url)["revision"] == "0003_soc_accountability"
+    assert upgrade_database(url)["revision"] == "0004_behavior_findings"
     maker = build_sessions(url)
     engine = maker.kw["bind"]
     try:
@@ -51,3 +51,56 @@ def test_postgres_migration_bigint_and_upsert_contention():
             assert all(w["distinct_destination_hosts"] >= 1 for w in behavior["windows"])
     finally:
         engine.dispose()
+
+
+@pytest.mark.skipif(not os.getenv("PG_TEST_DATABASE_URL"), reason="No CI PostgreSQL service")
+def test_postgres_concurrent_behavior_case_upserts_preserve_unique_incident():
+    """Concurrent worker overlap cannot create duplicate source/window cases."""
+    from datetime import datetime, timezone
+    from networkpulse.behavior_cases import finding_id, materialize_findings
+    from networkpulse.schemas import FlowEvent
+    from networkpulse.storage import BehaviorFinding
+
+    url = os.environ["PG_TEST_DATABASE_URL"]
+    upgrade_database(url)
+    maker = build_sessions(url)
+    seed = sample_flows(110, seed=19)
+    detector = train(seed, seed=19)
+    template = seed[0].model_dump(mode="json")
+    events = []
+    for i in range(8):
+        value = dict(template)
+        value.update({
+            "timestamp": datetime(2026, 10, 14, 12, 1, i,
+                                  tzinfo=timezone.utc).isoformat(),
+            "source": "canonical", "src_ip": "198.51.100.218",
+            "dst_ip": f"203.0.113.{10 + i % 4}", "dst_port": 9000 + i,
+        })
+        events.append(FlowEvent.model_validate(value))
+    boundary = datetime(2026, 10, 14, 12, 5, tzinfo=timezone.utc)
+
+    try:
+        with maker() as db:
+            assert ingest(db, detector, events)["inserted"] == len(events)
+
+        def run_worker(_):
+            with maker() as db:
+                return materialize_findings(
+                    db, until=boundary, lateness_minutes=0, lookback_minutes=5,
+                    min_ports=2, min_destinations=2,
+                )
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            reports = list(executor.map(run_worker, range(3)))
+        assert all(r["candidate_upserts"] >= 1 for r in reports)
+        with maker() as db:
+            key = finding_id("198.51.100.218", datetime(
+                2026, 10, 14, 12, 0, tzinfo=timezone.utc,
+            ))
+            stored = db.get(BehaviorFinding, key)
+            assert stored is not None and stored.flow_count == len(events)
+            assert db.scalar(select(func.count(BehaviorFinding.id)).where(
+                BehaviorFinding.source_ip == "198.51.100.218",
+            )) == 1
+    finally:
+        maker.kw["bind"].dispose()

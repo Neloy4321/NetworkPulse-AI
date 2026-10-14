@@ -73,6 +73,45 @@ class AlertAudit(Base):
     alert: Mapped[Alert] = relationship(back_populates="history")
 
 
+class BehaviorFinding(Base):
+    """One durable, idempotent source/window investigation case."""
+
+    __tablename__ = "behavior_findings"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    source_ip: Mapped[str] = mapped_column(String(45), nullable=False, index=True)
+    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    window_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    patterns: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    flow_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    destination_ports: Mapped[int] = mapped_column(Integer, nullable=False)
+    destination_hosts: Mapped[int] = mapped_column(Integer, nullable=False)
+    flagged_flows: Mapped[int] = mapped_column(Integer, nullable=False)
+    severity: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="open")
+    assigned_to: Mapped[str | None] = mapped_column(String(150))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    history: Mapped[list[BehaviorFindingAudit]] = relationship(back_populates="finding")
+
+
+class BehaviorFindingAudit(Base):
+    """Durable, actor-attributed status and assignment changes."""
+
+    __tablename__ = "behavior_finding_audit"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    finding_id: Mapped[str] = mapped_column(
+        ForeignKey("behavior_findings.id"), nullable=False, index=True
+    )
+    actor: Mapped[str] = mapped_column(String(150), nullable=False)
+    old_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    new_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    old_assignee: Mapped[str | None] = mapped_column(String(150))
+    new_assignee: Mapped[str | None] = mapped_column(String(150))
+    note: Mapped[str] = mapped_column(String(1500), nullable=False)
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
+    finding: Mapped[BehaviorFinding] = relationship(back_populates="history")
+
+
 class AlertNote(Base):
     __tablename__ = "alert_notes"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -83,6 +122,8 @@ class AlertNote(Base):
     alert: Mapped[Alert] = relationship(back_populates="notes")
 
 
+Index("idx_behavior_source_window", BehaviorFinding.source_ip, BehaviorFinding.window_start.desc())
+Index("idx_behavior_status_window", BehaviorFinding.status, BehaviorFinding.window_start.desc())
 Index("idx_alert_assignee", Alert.assigned_to)
 Index("idx_alert_notes_alert_date", AlertNote.alert_id, AlertNote.created_at)
 Index("idx_flow_timestamp_src", NetworkEvent.timestamp.desc(), NetworkEvent.src_ip)
@@ -116,7 +157,7 @@ def build_sessions(database_url: str) -> sessionmaker[Session]:
         raise RuntimeError("Database is not migrated; run: networkpulse db upgrade")
     with engine.connect() as connection:
         version = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one_or_none()
-    if version != "0003_soc_accountability":
+    if version != "0004_behavior_findings":
         engine.dispose()
         raise RuntimeError("Database migration required; run: networkpulse db upgrade")
     return sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)

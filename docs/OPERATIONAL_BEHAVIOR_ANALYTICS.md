@@ -57,3 +57,71 @@ runs the behavior SQL on PostgreSQL rather than SQLite alone.
 - No claim of real external IdP, validated public HTTPS/Caddy staging,
   cross-site sensor coverage, independently measured operational detection
   accuracy, multi-worker failover testing or independent security assessment.
+
+
+## Durable correlated behavior cases (revision 0004)
+
+A **production worker**, not a notebook or mock endpoint, scans finalized
+five-minute UTC windows and groups real stored `network_events` by source IP.
+It detects co-occurring port diversity, destination fan-out and connection
+bursts, and persists **one case per source/window**, with JSON signal labels
+and observed ML-flagged-flow counts. Signals are *heuristic only*; even a
+multi-signal finding does not prove an attack.
+
+- **Migration:** `networkpulse db upgrade` to `0004_behavior_findings`. New
+  `behavior_findings` and `behavior_finding_audit` tables preserve the
+  existing flow alerts and historical records. Back up PostgreSQL with
+  `pg_dump`, or SQLite with `networkpulse db backup`, before upgrading.
+  The application intentionally refuses an out-of-date database.
+- **Live worker:** `networkpulse behavior-worker --interval 60 --lookback 30
+  --lateness 2`; a dedicated `behavior-worker` service is included under the
+  Compose `streaming` profile. It uses the same database as the API and
+  Redis Streams consumer. Start the API and migrate first. The worker
+  processes only *completed* five-minute windows with a two-minute watermark
+  to tolerate short out-of-order arrival. It retries via its next cycle;
+  failed cycles exit for Docker restart supervision.
+- **Historical authorized backfill:** `networkpulse behavior-worker --once
+  --until 2026-10-14T12:00:00+00:00 --lateness 0 --lookback 60`.
+  Operator must select the relevant historical period; no invisible infinite
+  history sweep. Historical runs do not bypass role controls on the API.
+- **Review API:** Viewer or above can query
+  `GET /api/v1/intelligence/findings` with status/source/pagination filters
+  and `GET /api/v1/intelligence/findings/{id}/history`.
+  Analyst or Admin can `PATCH /api/v1/intelligence/findings/{id}` with
+  `{"status": "investigating", "assigned_to": "analyst-1",
+    "note": "Confirmed authorized inventory activity"}`. Status is one of
+  open/investigating/resolved/false_positive; `assigned_to: null` unassigns.
+  Each change inserts an actor-attributed audit record in the same DB
+  transaction. Browser cookie CSRF and bearer OIDC role checks are unchanged.
+- **SOC UI:** The Behavior Findings table displays persisted cases and an
+  analyst-review action separate from model-anomaly alerts. Text is displayed
+  with `textContent`, not raw HTML.
+- **Concurrency:** SHA-256 deterministic ID for (source IP, start UTC, 5m)
+  and database-native `ON CONFLICT DO UPDATE`. Late additional flows only
+  increase evidence; they never silently reopen resolved/false-positive
+  findings or reset assignment. Every cycle revisits a bounded lookback,
+  which handles short late arrivals, worker restarts and retry after failure.
+
+### Accuracy, capacity and rollout limitations
+
+- Default thresholds are 12 distinct destination ports, 8 distinct hosts or
+  120 flows/minute *in one finalized five-minute window*. These are fixed,
+  configurable **investigation policy**, not supervised attack classifier
+  thresholds; tune them on independent authorized captures and log the policy.
+- The worker processes source groups in fixed database pages and fails
+  visibly when the candidate cap is reached. SQL scans can be costly on
+  heavily loaded PostgreSQL servers. Validate p95 query latency, throughput,
+  disk/storage growth, query plan and index coverage at actual production
+  scale before marking the deployment fully ready.
+- Late flows outside the configured lookback do not automatically update
+  prior cases: use an explicit dated backfill. Existing findings are not
+  deleted automatically on raw flow retention. Coordinate privacy/retention
+  policies and operator-approved incident disposition.
+- The authorized UNSW-NB15 CI replay uses original raw, distinct dated
+  capture files, and exercises production ingestion, read protection,
+  correlation idempotency, case review and audit. Synthetic test fixtures in
+  ordinary pytest assert concurrency/edge cases only; **no synthetic model
+  accuracy is advertised as real performance**.
+- Real external IdP/TLS staging, network operator licensing, high-rate load
+  testing on actual infrastructure and independent penetration assessment
+  remain separate deployment gates.
