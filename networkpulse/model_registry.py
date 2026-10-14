@@ -11,6 +11,8 @@ import os
 import shutil
 import tempfile
 import math
+import fcntl
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -46,6 +48,27 @@ class ModelRegistry:
     def __init__(self, root: Path):
         self.root = Path(root)
         self.catalog = self.root / 'registry.json'
+        self.journal = self.root / '.pending-model-release.json'
+        self.rollback_copy = self.root / '.pending-previous-model.joblib'
+
+    @contextmanager
+    def _exclusive(self, *, allow_recovery: bool = False):
+        # Linux POSIX flock: serializes independent CLI operator processes.
+        # Single-node shared filesystem only; NFS/distributed locks not assumed.
+        self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        fd = os.open(self.root / '.model-release.lock',
+                     os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            if self.journal.exists() and not allow_recovery:
+                raise RuntimeError(
+                    'Unresolved model release journal: inspect/repair deployed '
+                    'artifact and catalog before further mutations'
+                )
+            yield
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
 
     def _read(self) -> dict:
         if not self.catalog.exists():
@@ -53,6 +76,18 @@ class ModelRegistry:
         return json.loads(self.catalog.read_text(encoding='utf-8'))
 
     def register(self, name: str, model_path: Path, *, min_f1: float = 0.0,
+                 max_alert_fraction: float = 1.0,
+                 max_fpr_upper_95: float | None = None,
+                 release_directory: Path | None = None) -> dict:
+        with self._exclusive():
+            return self._register_locked(
+                name, model_path, min_f1=min_f1,
+                max_alert_fraction=max_alert_fraction,
+                max_fpr_upper_95=max_fpr_upper_95,
+                release_directory=release_directory,
+            )
+
+    def _register_locked(self, name: str, model_path: Path, *, min_f1: float = 0.0,
                  max_alert_fraction: float = 1.0,
                  max_fpr_upper_95: float | None = None,
                  release_directory: Path | None = None) -> dict:
@@ -130,25 +165,31 @@ class ModelRegistry:
         return path
 
     def _verify_production_receipt(self, name: str, evidence_path: Path | None,
-                                   *, max_fpr_upper_95: float) -> dict:
-        """Conservative, declared-claim gate; evidence authenticity is NOT assured.
+                                   *, max_fpr_upper_95: float,
+                                   trust_store: Path | None = None,
+                                   previous_active: str | None = None,
+                                   operation: str = 'promote') -> dict:
+        """Signature verified against pre-provisioned Ed25519 trusted key."""
 
-        Caller must separately verify the receipt issuer and original source data.
-        No test capture labels, SHA checksum or approval text can self-authenticate.
-        """
         if evidence_path is None:
             raise ValueError('production requires an independently audited validation receipt')
-        if not 0 < max_fpr_upper_95 <= 1:
-            raise ValueError('invalid production false-positive budget')
         record = self._read()['candidates'][name]
         if record.get('synthetic_only'):
             raise ValueError('synthetic candidate cannot be promoted for production')
-        try:
-            receipt = json.loads(Path(evidence_path).read_text(encoding='utf-8'))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise ValueError('invalid production validation receipt') from exc
-        if not isinstance(receipt, dict):
-            raise ValueError('production receipt must be an object')
+        if trust_store is None:
+            raise ValueError('production requires an out-of-band trusted Ed25519 public key store')
+        from networkpulse.release_approval import verify_signed_approval
+        signed = verify_signed_approval(evidence_path, trust_store)
+        if not 0 < max_fpr_upper_95 <= 1:
+            raise ValueError('invalid production false-positive budget')
+        receipt = signed['payload']
+        if receipt['previous_active'] != previous_active:
+            raise ValueError('Signed approval is bound to a different previous active model')
+        if receipt['operation'] != operation:
+            raise ValueError('Signed approval operation does not match requested release action')
+        if any(h.get('validation_receipt', {}).get('change_id') == receipt['change_id']
+               for h in self._read()['history'] if isinstance(h.get('validation_receipt'), dict)):
+            raise ValueError('Production change ID was already consumed; replay refused')
         if receipt.get('candidate_sha256') != record['sha256']:
             raise ValueError('production receipt candidate checksum does not match')
         if not all(receipt.get(key) is True for key in (
@@ -175,47 +216,190 @@ class ModelRegistry:
                 'independent_benign_count': benign, 'independent_attack_count': attack,
                 'independent_fpr_upper_95': upper, 'approved_by': receipt['approved_by'].strip(),
                 'evidence_sha256': sha256(Path(evidence_path)),
-                'authenticity_not_cryptographically_verified': True}
+                'signer_key_id': signed['signer_key_id'],
+                'change_id': receipt['change_id'],
+                'signature_verified': True,
+                'receipt_expires_utc': signed['receipt_expires_utc'],
+                'issuer_trust_requires_external_provisioning': True}
 
     def promote(self, name: str, destination: Path, *, production: bool = False,
                 evidence_path: Path | None = None,
-                max_fpr_upper_95: float = .05) -> dict:
+                max_fpr_upper_95: float = .05,
+                trust_store: Path | None = None) -> dict:
+        with self._exclusive():
+            return self._promote_locked(
+                name, destination, production=production,
+                evidence_path=evidence_path, max_fpr_upper_95=max_fpr_upper_95,
+                trust_store=trust_store,
+            )
+
+    def _promote_locked(self, name: str, destination: Path, *,
+                        production: bool, evidence_path: Path | None,
+                        max_fpr_upper_95: float, trust_store: Path | None,
+                        rollback_action: bool = False) -> dict:
         source = self._valid_artifact(name)
         data = self._read()
         proof = None
+        prior = data.get('active')
         if production:
             proof = self._verify_production_receipt(
-                name, evidence_path, max_fpr_upper_95=max_fpr_upper_95
+                name, evidence_path, max_fpr_upper_95=max_fpr_upper_95,
+                trust_store=trust_store, previous_active=prior,
+                operation='rollback' if rollback_action else 'promote',
             )
-        prior = data.get('active')
+        destination = Path(destination)
+        if prior is not None:
+            if prior not in data['candidates'] or not destination.is_file():
+                raise ValueError('active deployed model is missing from registry/destination')
+            if sha256(destination) != data['candidates'][prior]['sha256']:
+                raise ValueError('active deployed model checksum mismatch; release refused')
+        elif destination.exists():
+            raise ValueError('existing deployed file is not registered as active; release refused')
+
         destination.parent.mkdir(parents=True, exist_ok=True)
         fd, temp = tempfile.mkstemp(prefix='.model-', dir=destination.parent)
         os.close(fd)
+        journal_written = False
+        swapped = False
         try:
             shutil.copyfile(source, temp)
             if sha256(Path(temp)) != data['candidates'][name]['sha256']:
                 raise ValueError('model changed during promotion')
+            if prior is not None:
+                shutil.copyfile(destination, self.rollback_copy)
+                os.chmod(self.rollback_copy, 0o600)
+                if sha256(self.rollback_copy) != data['candidates'][prior]['sha256']:
+                    raise ValueError('previous model backup checksum mismatch')
+            _write_json(self.journal, {
+                'previous': prior, 'target': name,
+                'destination': str(destination.resolve()),
+                'target_sha256': data['candidates'][name]['sha256'],
+                'previous_sha256': data['candidates'][prior]['sha256'] if prior else None,
+                'action': 'rollback' if rollback_action else 'promote',
+                'instruction': 'Quarantine; do not deploy until registry and file agree.',
+            })
+            journal_written = True
             os.replace(temp, destination)
+            swapped = True
+            data['active'] = name
+            data['history'].append({
+                'from': prior, 'to': name,
+                'at': datetime.now(timezone.utc).isoformat(),
+                'action': 'rollback' if rollback_action else 'promote',
+                'production_policy': production,
+                'validation_receipt': proof,
+            })
+            _write_json(self.catalog, data)
+        except Exception:
+            if swapped:
+                try:
+                    if prior is None:
+                        destination.unlink(missing_ok=True)
+                    else:
+                        if sha256(self.rollback_copy) != data['candidates'][prior]['sha256']:
+                            raise RuntimeError('previous model restore checksum mismatch')
+                        os.replace(self.rollback_copy, destination)
+                except Exception:
+                    # Preserve on-disk journal and backup for manual recovery.
+                    raise RuntimeError('Release restore failed: manual journal recovery required')
+            if journal_written:
+                self.journal.unlink(missing_ok=True)
+            raise
         finally:
             Path(temp).unlink(missing_ok=True)
-        data['active'] = name
-        data['history'].append({'from': prior, 'to': name,
-                                'at': datetime.now(timezone.utc).isoformat(),
-                                'production_policy': production,
-                                'validation_receipt': proof})
-        _write_json(self.catalog, data)
-        return {'active': name, 'previous': prior, 'restart_required': True,
-                'production_policy': production,
-                'warning': 'Production receipt declarations require out-of-band issuer verification'
-                           if production else 'Local/demo promotion; not production certified'}
+        self.rollback_copy.unlink(missing_ok=True)
+        self.journal.unlink(missing_ok=True)
+        return {
+            'active': name, 'previous': prior, 'restart_required': True,
+            'production_policy': production,
+            'warning': 'Signed receipt verifies trusted key, not factual evaluation or site independence'
+                       if production else 'Local/demo promotion; not production certified',
+        }
 
     def rollback(self, destination: Path, *, production: bool = False,
-                 evidence_path: Path | None = None) -> dict:
+                 evidence_path: Path | None = None,
+                 trust_store: Path | None = None) -> dict:
+        with self._exclusive():
+            data = self._read()
+            if (not data['history'] or data['history'][-1]['from'] is None or
+                    data['history'][-1].get('action') == 'rollback'):
+                raise ValueError('no previous registered release available for rollback')
+            return self._promote_locked(
+                data['history'][-1]['from'], destination, production=production,
+                evidence_path=evidence_path, trust_store=trust_store,
+                max_fpr_upper_95=.05, rollback_action=True,
+            )
+
+    def verify_active(self, destination: Path) -> dict:
+        """Read-only startup/operator invariant. Never loads joblib/pickle."""
+        if self.journal.exists():
+            raise RuntimeError('unresolved release journal; active model untrusted')
         data = self._read()
-        if not data['history'] or data['history'][-1]['from'] is None:
-            raise ValueError('no previous registered release available for rollback')
-        return self.promote(data['history'][-1]['from'], destination,
-                            production=production, evidence_path=evidence_path)
+        active = data.get('active')
+        if active is None:
+            raise ValueError('no registered active release')
+        record = data['candidates'].get(active)
+        if not record:
+            raise ValueError('active candidate missing from registry')
+        path = Path(destination)
+        if not path.is_file() or sha256(path) != record['sha256']:
+            raise ValueError('deployed model artifact checksum differs from registered release')
+        if not self._valid_artifact(active).is_file():
+            raise ValueError('registry source candidate missing')
+        return {
+            'active': active, 'sha256': record['sha256'],
+            'consistent': True,
+            'history_entries': len(data['history']),
+            'warning': 'Checksum consistency is not code provenance or site performance approval',
+        }
+
+    def recover_interrupted(self, destination: Path, *,
+                            expected_target_sha256: str,
+                            confirm: bool = False) -> dict:
+        """Reconcile an interrupted single-node rollout from its journal.
+
+        A release whose catalog commit succeeded is retained; otherwise the
+        saved previous artifact is atomically restored. No unknown bytes are
+        installed and all mismatches retain journal evidence for investigation.
+        """
+        if not confirm:
+            raise ValueError('Explicit interrupted-release recovery approval required')
+        with self._exclusive(allow_recovery=True):
+            if not self.journal.exists():
+                raise ValueError('no interrupted release journal exists')
+            journal = json.loads(self.journal.read_text(encoding='utf-8'))
+            destination = Path(destination).resolve()
+            if (journal.get('destination') != str(destination) or
+                    journal.get('target_sha256') != expected_target_sha256):
+                raise ValueError('journal target/destination differs from operator approval')
+            prior, target = journal['previous'], journal['target']
+            expected_prior = journal['previous_sha256']
+            catalog = self._read()
+            active = catalog.get('active')
+            current = sha256(destination) if destination.is_file() else None
+            if active == target and current == expected_target_sha256:
+                result = 'committed_release_verified'
+            elif active == prior:
+                if prior is None:
+                    if current not in (None, expected_target_sha256):
+                        raise ValueError('unknown deployed bytes; manual recovery required')
+                    destination.unlink(missing_ok=True)
+                elif current == expected_prior:
+                    pass
+                elif current == expected_target_sha256:
+                    if (not self.rollback_copy.is_file() or
+                            sha256(self.rollback_copy) != expected_prior):
+                        raise ValueError('previous artifact backup missing/mismatched')
+                    os.replace(self.rollback_copy, destination)
+                else:
+                    raise ValueError('unrecognized deployed artifact; manual recovery required')
+                result = 'previous_release_restored'
+            else:
+                raise ValueError('catalog state differs from interrupted release journal')
+            self.rollback_copy.unlink(missing_ok=True)
+            self.journal.unlink(missing_ok=True)
+            return {'result': result, 'active': active,
+                    'consistent': True, 'manual_restart_required': True}
 
     def status(self) -> dict:
         data = self._read()

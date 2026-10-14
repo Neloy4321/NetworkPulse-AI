@@ -183,7 +183,10 @@ def main(argv: list[str] | None = None) -> int:
     drift.add_argument("--output", type=Path, default=Path("reports/drift.json"))
 
     registry = cmd.add_parser("model-registry", help="Register, gate, promote, shadow and roll back trusted models")
-    registry.add_argument("action", choices=["register", "status", "promote", "rollback", "shadow"])
+    registry.add_argument("action", choices=[
+        "register", "status", "promote", "rollback", "shadow",
+        "verify-active", "recover-interrupted",
+    ])
     registry.add_argument("--name", help="Immutable candidate name")
     registry.add_argument("--file", type=Path, help="Locally trained, trusted model artifact")
     registry.add_argument("--root", type=Path, default=Path("data/registry"))
@@ -195,7 +198,13 @@ def main(argv: list[str] | None = None) -> int:
     registry.add_argument("--production", action="store_true",
                           help="Require independent-site, live-sensor and human evidence")
     registry.add_argument("--evidence", type=Path,
-                          help="Operator-audited production validation receipt JSON")
+                          help="Ed25519-signed production approval envelope")
+    registry.add_argument("--trust-store", type=Path,
+                          help="Security-admin provisioned public key trust store (never a candidate file)")
+    registry.add_argument("--expected-sha256",
+                          help="Manually reviewed interrupted release target SHA-256")
+    registry.add_argument("--confirm", action="store_true",
+                          help="Confirm isolated operator recovery of interrupted release")
     registry.add_argument("--seed", type=int, default=42)
 
     archive = cmd.add_parser("archive", help="Archive old unalerted flows; dry-run unless --commit")
@@ -264,6 +273,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "model-registry":
         from networkpulse.model_registry import ModelRegistry
+        if (os.getenv("NETWORKPULSE_DEPLOYMENT", "development").lower() == "production"
+                and args.action in {"promote", "rollback"} and not args.production):
+            parser.error("Production environment forbids an unsigned local/demo model release")
         managed = ModelRegistry(args.root)
         if args.action in {"register", "promote", "shadow"} and not args.name:
             parser.error("model-registry action requires --name")
@@ -275,14 +287,25 @@ def main(argv: list[str] | None = None) -> int:
                                       max_fpr_upper_95=args.max_fpr_upper_95)
         elif args.action == "status":
             result = managed.status()
+        elif args.action == "verify-active":
+            result = managed.verify_active(args.active)
+        elif args.action == "recover-interrupted":
+            if not args.confirm or not args.expected_sha256:
+                parser.error("recover-interrupted requires --confirm and --expected-sha256")
+            result = managed.recover_interrupted(
+                args.active, expected_target_sha256=args.expected_sha256,
+                confirm=True,
+            )
         elif args.action == "promote":
             result = managed.promote(args.name, args.active,
                                      production=args.production,
                                      evidence_path=args.evidence,
-                                     max_fpr_upper_95=args.max_fpr_upper_95 or .05)
+                                     max_fpr_upper_95=args.max_fpr_upper_95 or .05,
+                                     trust_store=args.trust_store)
         elif args.action == "rollback":
             result = managed.rollback(args.active, production=args.production,
-                                      evidence_path=args.evidence)
+                                      evidence_path=args.evidence,
+                                      trust_store=args.trust_store)
         else:
             result = managed.shadow(args.name, args.active,
                                     sample_flows(count=300, seed=args.seed)[-75:])

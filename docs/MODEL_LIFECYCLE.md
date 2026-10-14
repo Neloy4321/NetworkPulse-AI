@@ -57,31 +57,143 @@ and a one-sided Wilson upper 95% FPR bound at or below the supplied limit.
 Internal holdout metrics can be optimistic if events are correlated or from the
 same site. The command rejects any old artifact with missing FPR evidence.
 
-### Production policy gate (NOT an independent attestation service)
+### Signed production release gate — no unsigned self-approval
 
-The default `promote` command continues to support an explicit **local/demo**
-workflow and is **not** production certified. To opt into the more restrictive
-policy:
+The production path now **requires a cryptographically verified Ed25519
+signature**, verified against a locally mounted, security-admin provisioned
+public-key trust store. Merely placing `independent_site_verified: true` in
+unsigned JSON will fail. The configured trusted key is external to the
+candidate release and must never be obtained from an untrusted model bundle.
 
-```shell
-networkpulse model-registry promote --production --name validated-candidate --active data/model.joblib --max-fpr-upper-95 0.05 --evidence data/operator-verified-validation.json
+**1. Independent security reviewer provisions signing trust outside Git.**
+Generate/manage an Ed25519 key through an approved organization process
+(prefer an HSM/offline workstation). The private key **must never enter** API
+containers, Docker volumes, CI artifacts, logs or this repository. Provision
+a read-only trust store at `/etc/networkpulse/release-trust.json`:
+
+```json
+{
+  "schema_version": 1,
+  "keys": [
+    {
+      "key_id": "approved-security-reviewer-2026",
+      "enabled": true,
+      "ed25519_public_key_base64": "<base64-of-raw-32-byte-public-key>"
+    }
+  ]
+}
 ```
 
-The receipt must contain a matching registered artifact SHA-256,
-`independent_site_verified: true`, `live_sensor_contract_verified: true`,
-`training_test_leakage_audited: true`, a nonempty `approved_by`, and
-`evaluation` with `benign_count`, `attack_count` and
-`false_positives`. A minimum of 200 benign and 30 attack examples is
-enforced; the computed one-sided 95% Wilson upper FPR must meet the budget.
-Synthetic-only artifacts fail regardless of their F1. Receipts are checked
-before any model artifact is replaced.
+Changing `enabled` to false revokes new release approvals from that key.
+Trust-store ownership, reviewer authority and key lifecycle must be independently
+controlled; a signature does not establish that a validation claim is factually
+correct.
 
-**Critical trust boundary:** those boolean declarations and operator names
-come from a local JSON file. The software **cannot independently authenticate
-the evidence source, site independence or the approver**, nor cryptographically
-verify an independent lab's signatures. A real change-management process,
-source validation, secure identity and a reviewed approval process remain
-mandatory for production operations. The runbook does not claim otherwise.
+**2. Independently review real labeled validation and prepare exact signed
+change instructions** (no raw IPs in the approval). For example, prepare
+`review-payload.json` with the *actual* SHA, previous release and metrics:
+
+```json
+{
+  "candidate_sha256": "<registered-candidate-sha256>",
+  "previous_active": "approved-previous-release",
+  "operation": "promote",
+  "change_id": "soc-review-ticket-20261014-001",
+  "issued_at_utc": "2026-10-14T10:00:00Z",
+  "expires_at_utc": "2026-10-15T10:00:00Z",
+  "independent_site_verified": true,
+  "live_sensor_contract_verified": true,
+  "training_test_leakage_audited": true,
+  "approved_by": "Authenticated security reviewer",
+  "evaluation": {
+    "benign_count": 1000,
+    "attack_count": 100,
+    "false_positives": 3
+  }
+}
+```
+
+For initial registration `previous_active` must be `null` rather than a
+name. `operation` must be `promote` or `rollback` and the `change_id`
+must be unique across successful production changes. Approvals expire and are
+valid for at most seven days; signing a longer-lived approval fails closed.
+The CLI verifies the real computed Wilson 95% upper false-positive bound
+and requires at least 200 benign and 30 attack observations. The example
+counts and dates are **not** a real signed approval or validation evidence.
+
+**3. Sign offline (never inside the production container):**
+
+```bash
+python tools/sign_release_approval.py \
+  --payload /secure/review-payload.json \
+  --private-key /secure/ed25519-reviewer-private.pem \
+  --key-id approved-security-reviewer-2026 \
+  --output /secure/approved-release-envelope.json
+```
+
+The signing utility uses canonical JSON encoding (UTF-8,
+`sort_keys=True`, `ensure_ascii=False`, compact separators, no NaN).
+The resulting envelope includes `schema_version`, `key_id`,
+`payload`, and base64-encoded `signature`. The operator receives only the
+signed envelope, not the private key.
+
+**4. Quiesce API/Redis workers, use a verified DB snapshot and approved
+maintenance window.** Promotion is a single-node, POSIX-flock-serialized
+operation, not a distributed rollout:
+
+```bash
+networkpulse model-registry promote \
+  --production --name reviewed-model-v2 \
+  --root /secure/registry --active /secure/data/model.joblib \
+  --trust-store /etc/networkpulse/release-trust.json \
+  --evidence /secure/approved-release-envelope.json \
+  --max-fpr-upper-95 0.05
+
+networkpulse model-registry verify-active \
+  --root /secure/registry --active /secure/data/model.joblib
+# Update MODEL_SHA256 to match the verified active SHA and restart ALL
+# API and streaming/MLOps worker containers together.
+```
+
+An existing deployed model must already match the registry's active checksum.
+An unregistered preexisting deployment cannot be silently overwritten. After
+promotion, a journal and backup ensure a registry-write error restores the
+previous artifact; an abrupt crash leaves a journal and **blocks further
+mutations** until explicitly reconciled.
+
+**5. Rollback requires a NEW, independently signed change** with
+`operation=rollback`, `previous_active` set to the current candidate,
+`candidate_sha256` referring to the approved older candidate, and a new
+`change_id`. Run `model-registry rollback --production` with the new
+envelope, trust store, root and active path. A second immediate rollback is
+blocked (no automatic ping-pong). Stop/restart all scoring processes around
+each change and update `MODEL_SHA256` before they restart.
+
+**6. Recover interrupted local release operations** only after operator review:
+
+```bash
+networkpulse model-registry recover-interrupted \
+  --root /secure/registry --active /secure/data/model.joblib \
+  --expected-sha256 '<TARGET-SHA256-IN-REVIEWED-JOURNAL>' --confirm
+networkpulse model-registry verify-active \
+  --root /secure/registry --active /secure/data/model.joblib
+```
+
+If catalog+active bytes show a completed write, the recovery command retains
+the new candidate and clears the stale journal. If the catalog remains at the
+previous candidate, it restores the previous verified artifact and clears the
+journal. Unexpected bytes, wrong destination, missing rollback backup or bad
+checksum leave the journal intact for **manual incident handling**. A recovery
+command never invents an approval or automatically changes a catalog record.
+Do not run recovery concurrently with deployed live workers.
+
+**Boundaries:** signature verifies the listed review key and immutable
+change payload, not claim truth, independent site provenance, real IdP or
+live deployment safety. The registry remains local and POSIX
+single-filesystem: use external attested artifact distribution, HSM-backed
+review, p95/p99 field validation, health-based controlled rollout, on-call
+approval and monitoring for a real multi-node production deployment.
+
 
 
 ## Operational drift and lineage evidence — revision 0005
