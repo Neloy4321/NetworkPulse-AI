@@ -20,8 +20,9 @@ def active_release(app_settings, tmp_path):
     model.save(app_settings.model_path)
     registry = ModelRegistry(tmp_path / "registry")
     registry.register("candidate-ci", app_settings.model_path)
-    registry.promote("candidate-ci", app_settings.model_path)
-    return registry, app_settings.model_path, sha256(app_settings.model_path)
+    deployed = tmp_path / "deployed.joblib"
+    registry.promote("candidate-ci", deployed)
+    return registry, deployed, sha256(deployed)
 
 
 def test_readonly_preflight_checks_active_registry_pin_and_feature(active_release):
@@ -100,7 +101,7 @@ def test_production_rejects_missing_registry_and_worker_does_not_dequeue(
 
 def test_development_opt_in_enforces_registry(active_release, app_settings, monkeypatch):
     registry, deployed, digest = active_release
-    settings = replace(app_settings, model_sha256=digest)
+    settings = replace(app_settings, model_path=deployed, model_sha256=digest)
     monkeypatch.delenv("NETWORKPULSE_MODEL_REGISTRY_ROOT", raising=False)
     assert require_runtime_release(settings) is None
     monkeypatch.setenv("NETWORKPULSE_MODEL_REGISTRY_ROOT", str(registry.root))

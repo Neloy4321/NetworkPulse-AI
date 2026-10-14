@@ -62,7 +62,9 @@ def test_production_app_disables_documentation_at_source(monkeypatch, app_settin
     from networkpulse.model_registry import ModelRegistry
     registry = ModelRegistry(tmp_path / "registry")
     registry.register("access-control-fixture", target)
-    registry.promote("access-control-fixture", target)
+    deployed = tmp_path / "active-security-fixture.joblib"
+    registry.promote("access-control-fixture", deployed)
+    config = replace(config, model_path=deployed, model_sha256=sha256(deployed))
     monkeypatch.setenv("NETWORKPULSE_MODEL_REGISTRY_ROOT", str(registry.root))
     with TestClient(create_app(config), base_url="https://soc.example.test") as client:
         for path in ("/docs", "/redoc", "/openapi.json"):
