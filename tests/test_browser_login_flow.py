@@ -136,3 +136,62 @@ def test_oidc_login_csrf_rbac_and_logout(monkeypatch, app_settings, samples):
             follow_redirects=False,
         )
         assert replay.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_real_rs256_oidc_identity_nonce_and_pkce_exchange(monkeypatch):
+    import time
+    import httpx
+    import jwt
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    from networkpulse.security.oidc import TokenVerifier
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    public = key.public_key()
+    now = int(time.time())
+    access = jwt.encode({
+        "iss": "https://idp.example", "aud": "networkpulse-api",
+        "sub": "alice", "exp": now + 600, "iat": now,
+        "networkpulse_role": "analyst",
+    }, key, algorithm="RS256")
+    nonce = "nonce-protected"
+    identity_claims = {
+        "iss": "https://idp.example", "aud": "public-client", "sub": "alice",
+        "exp": now + 600, "iat": now, "nonce": nonce,
+    }
+    response_id_token = jwt.encode(identity_claims, key, algorithm="RS256")
+    original_client = httpx.AsyncClient
+
+    def transport(request):
+        assert str(request.url) == "https://idp.example/token"
+        assert b"code_verifier" in request.content
+        return httpx.Response(200, json={
+            "access_token": access, "id_token": response_id_token,
+            "token_type": "Bearer",
+        })
+
+    monkeypatch.setattr(
+        "networkpulse.security.browser_login.httpx.AsyncClient",
+        lambda **options: original_client(transport=httpx.MockTransport(transport), **options),
+    )
+    verifier = TokenVerifier(
+        "https://idp.example", "networkpulse-api", "https://idp.example/keys"
+    )
+    verifier.jwks.get_signing_key_from_jwt = lambda token: type("Key", (), {"key": public})()
+    browser = BrowserLogin(
+        MemoryRedis(), "https://idp.example", "https://idp.example/auth",
+        "https://idp.example/token", "public-client", "https://soc.example"
+    )
+    received, ttl = await browser.exchange(
+        "verified-auth-code", {"verifier": "generated-verifier", "nonce": nonce},
+        verifier,
+    )
+    assert received == access
+    assert 500 <= ttl <= 900
+    with pytest.raises(HTTPException) as error:
+        await browser.exchange(
+            "verified-auth-code", {"verifier": "generated-verifier", "nonce": "incorrect"},
+            verifier,
+        )
+    assert error.value.status_code == 401
