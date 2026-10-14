@@ -27,3 +27,12 @@ def test_analytics_workers_have_success_cycle_healthchecks():
         assert "disable: true" not in section
         assert "stop_grace_period" in section
     assert 'model_data:/app/data:ro' in mlops
+
+
+def test_stream_worker_health_requires_recent_successful_cycle():
+    compose = Path("compose.yaml").read_text(encoding="utf-8")
+    worker = compose.split("  worker:\n", 1)[1].split("\n  mlops-worker:\n", 1)[0]
+    assert "networkpulse.ops_health --role stream" in worker
+    assert "--max-age-seconds 120" in worker
+    assert "model_data:/app/data:ro" in worker
+    assert "socket_connect_timeout=2" in worker

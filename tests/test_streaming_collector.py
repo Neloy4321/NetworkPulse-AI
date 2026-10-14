@@ -40,9 +40,10 @@ def test_collector_replay_only_if_checkpoint_not_committed(tmp_path):
 class FakeRedis:
     def __init__(self):
         self.messages=[]
-    def xlen(self, stream):return len(self.messages)
-    def xadd(self, stream, fields):
-        self.messages.append(fields)
+    def eval(self, _script, _keys, _stream, limit, encoded):
+        if len(self.messages) >= int(limit):
+            return None
+        self.messages.append({"event": encoded})
         return "1-0"
 
 

@@ -284,6 +284,54 @@ def replay(archive: Path) -> dict:
                 finally:
                     maker.kw["bind"].dispose()
 
+        # The very same original 800 later-capture flows traverse the actual
+        # Redis Streams worker path and committed DB unique-key arbitration,
+        # with no synthetic data or mock Redis transport.
+        import os
+        import redis
+        from networkpulse.streaming.redis_streams import FlowStream, process_events
+        from networkpulse.storage import NetworkEvent
+        redis_url = os.environ.get("REDIS_TEST_URL")
+        if not redis_url:
+            raise RuntimeError("Real-capture streaming check requires CI Redis")
+        redis_client = redis.Redis.from_url(redis_url, decode_responses=True)
+        stream_name = "networkpulse:ci:real-unsw:" + digest[:16]
+        queue = FlowStream(redis_client, stream=stream_name, group="real-ci",
+                           max_backlog=1200)
+        try:
+            redis_client.delete(stream_name, queue.dead_letter)
+            queue.initialize()
+            for item in replay_events:
+                queue.enqueue(item.model_dump(mode="json"))
+            assert redis_client.xlen(stream_name) == len(replay_events)
+            streaming_start = time.perf_counter()
+            redis_processed = 0
+            batches = 0
+            while redis_processed < len(replay_events):
+                result = process_events(
+                    queue, "real-unsw-worker", settings=settings, once=True
+                )
+                assert result["processed"] > 0
+                assert not result["retried"] and not result["dead_lettered"]
+                redis_processed += result["processed"]
+                batches += 1
+            elapsed_stream = max(time.perf_counter() - streaming_start, 0.000001)
+            assert redis_processed == len(replay_events)
+            assert redis_client.xlen(stream_name) == 0
+            assert redis_client.xpending(stream_name, "real-ci")["pending"] == 0
+            assert redis_client.xlen(queue.dead_letter) == 0
+            verify_maker = build_sessions(database)
+            try:
+                with verify_maker() as session:
+                    assert session.query(NetworkEvent).count() == len(replay_events)
+            finally:
+                verify_maker.kw["bind"].dispose()
+            redis_flow_rate = round(redis_processed / elapsed_stream, 2)
+            redis_batch_count = batches
+        finally:
+            redis_client.delete(stream_name, queue.dead_letter)
+            redis_client.close()
+
     # Privacy contract: aggregate only. Never put IPs/rows/tokens in output.
     return {
         "dataset": "Original raw UNSW-NB15 (user-authorized Drive archive)",
@@ -296,6 +344,9 @@ def replay(archive: Path) -> dict:
         "candidate_release_registered_not_promoted": registry.status()["active"] is None,
         "heldout_unique_rows": len(candidate_events),
         "replayed_real_flows": len(replay_events),
+        "redis_stream_processed_real_flows": redis_processed,
+        "redis_stream_batches": redis_batch_count,
+        "redis_stream_ci_flows_per_second": redis_flow_rate,
         "inserted_real_flows": inserted,
         "durable_behavior_cases": candidate_report["candidate_upserts"],
         "mlops_monitored_real_flows": monitored["flow_count"],
@@ -327,6 +378,8 @@ def replay(archive: Path) -> dict:
             "real_training_candidate_scores_reproducible": True,
             "real_training_candidate_registry_not_deployed": True,
             "real_training_split_quality_gate_verified": True,
+            "real_redis_stream_batch_ingest_idempotent": True,
+            "real_redis_stream_pending_and_dlq_empty": True,
         },
         "limitations": [
             "OIDC/JWKS issuer was replaced with locally generated test keys, not real IdP",
