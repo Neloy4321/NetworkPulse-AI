@@ -90,6 +90,13 @@ def security_middleware_factory(*, max_body_bytes: int, per_minute: int,
             # Admit before reading a potentially expensive chunked body. A
             # known oversize Content-Length was already rejected without charge.
             peer = request.client.host if request.client else 'unknown'
+            # Credential-bound buckets avoid placing all users behind Caddy
+            # into one shared quota. A global Redis budget remains mandatory:
+            # unverified arbitrary credentials could otherwise evade a peer cap.
+            credential = (request.headers.get("authorization") or
+                          request.cookies.get("__Host-np-session"))
+            if distributed_limiter is not None and credential and 16 <= len(credential) <= 8192:
+                peer = "credential:" + credential
             allowed = (distributed_limiter.admit(peer) if distributed_limiter is not None
                        else limiter.admit(peer))
             if not allowed:
