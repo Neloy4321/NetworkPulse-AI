@@ -64,7 +64,7 @@ def test_postgres_concurrent_behavior_case_upserts_preserve_unique_incident():
     url = os.environ["PG_TEST_DATABASE_URL"]
     upgrade_database(url)
     maker = build_sessions(url)
-    seed = sample_flows(110, seed=19)
+    seed = sample_flows(310, seed=19)
     detector = train(seed, seed=19)
     template = seed[0].model_dump(mode="json")
     events = []
