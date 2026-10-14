@@ -12,6 +12,33 @@ let toastTimer;
 let alertsOffset=0;
 const alertsLimit=25;
 let activeCaseId = null;
+let browserSession = null;
+
+async function initializeBrowserAuth() {
+  const result = await fetch('/auth/session', {cache: 'no-store'});
+  if (result.status === 404) return;
+  if (result.status === 401) { window.location.assign('/auth/login'); return; }
+  if (!result.ok) throw new Error('OIDC session unavailable');
+  browserSession = await result.json();
+  const logout = $('logout-button');
+  logout.hidden = false;
+  logout.addEventListener('click', async () => {
+    const r = await fetch('/auth/logout', {
+      method: 'POST', headers: {'X-CSRF-Token': browserSession.csrf_token}
+    });
+    if (r.ok) window.location.assign('/auth/login');
+    else toast('Sign-out failed.');
+  });
+}
+
+async function mutationHeaders() {
+  if (browserSession) {
+    return {'Content-Type': 'application/json',
+            'X-CSRF-Token': browserSession.csrf_token};
+  }
+  const key = prompt('Operator X-API-Key (not stored by browser)');
+  return key ? {'Content-Type': 'application/json', 'X-API-Key': key} : null;
+}
 
 async function getJson(url, init = {}) {
   const r = await fetch(url, {cache: 'no-store', ...init});
@@ -136,11 +163,11 @@ async function showCase(id) {
 async function caseMutation(suffix, method, payload) {
   const id = activeCaseId;
   if (id === null) return;
-  const key = prompt('Operator X-API-Key (not stored by browser)');
-  if (!key) return;
+  const headers = await mutationHeaders();
+  if (!headers) return;
   try {
     await getJson('/api/v1/alerts/' + id + '/' + suffix, {
-      method, headers: {'Content-Type': 'application/json', 'X-API-Key': key},
+      method, headers,
       body: JSON.stringify(payload)
     });
     toast('Case update recorded.');
@@ -167,15 +194,15 @@ $('case-add-note').addEventListener('click', async () => {
   await caseMutation('notes', 'POST', {note: note.trim()});
 });
 async function triage(id) {
-  const key = prompt('Operator X-API-Key (not stored by browser)');
-  if (key === null || !key) return;
+  const headers = await mutationHeaders();
+  if (!headers) return;
   const state = prompt('New status: open | investigating | resolved | false_positive', 'investigating');
   if (state === null) return;
   if (!['open','investigating','resolved','false_positive'].includes(state)) { toast('Invalid status.'); return; }
   const note = prompt('Audit note (minimum 3 characters)');
   if (note === null || note.trim().length < 3) { toast('A reason of at least 3 characters is required.'); return; }
   try {
-    await getJson(`/api/v1/alerts/${id}`, {method: 'PATCH', headers: {'Content-Type':'application/json', 'X-API-Key': key}, body: JSON.stringify({status: state, note})});
+    await getJson(`/api/v1/alerts/${id}`, {method: 'PATCH', headers, body: JSON.stringify({status: state, note})});
     toast(`Alert #${id} updated; audit trail recorded.`);
     await refresh();
     if (activeCaseId === id) await showCase(id);
@@ -242,4 +269,4 @@ $('alerts-next').addEventListener('click', () => {
 window.addEventListener('resize', () => drawTimeline(latestTrends));
 setInterval(() => $('current-time').textContent = new Date().toLocaleTimeString('en-GB', {hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'UTC'}) + ' UTC', 1000);
 setInterval(refresh, 8000);
-refresh();
+initializeBrowserAuth().then(refresh).catch(err => toast(err.message));
