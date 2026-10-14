@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from networkpulse.config import Settings
 from networkpulse.security.oidc import Principal, TokenVerifier
 from networkpulse.security.limits import security_middleware_factory
+from networkpulse.security.csv_safety import safe_spreadsheet_cell
 from networkpulse.observability import metric_middleware, exporter, INGEST_TOTAL, ALERT_ACTIONS, MODEL_INFERENCE
 import time
 from networkpulse.detector import Detector
@@ -290,8 +291,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             record = [alert.id, alert.severity, alert.status, alert.assigned_to or '',
                       flow.src_ip, flow.dst_ip, flow.dst_port, flow.risk,
                       alert.created_at.isoformat()]
-            writer.writerow(["'" + x if isinstance(x, str) and x.startswith(('=', '+', '-', '@'))
-                             else x for x in record])
+            writer.writerow([safe_spreadsheet_cell(cell) for cell in record])
         return Response(content=output.getvalue(), media_type='text/csv',
                         headers={'Content-Disposition': 'attachment; filename=networkpulse-alerts.csv'})
 
