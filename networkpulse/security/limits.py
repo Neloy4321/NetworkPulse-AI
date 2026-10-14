@@ -67,7 +67,7 @@ def security_middleware_factory(*, max_body_bytes: int, per_minute: int,
             response.headers['Content-Security-Policy'] = (
                 "default-src 'self'; base-uri 'none'; object-src 'none'; "
                 "frame-ancestors 'none'; form-action 'self'; "
-                "script-src 'self'; style-src 'self' 'unsafe-inline'; "
+                "script-src 'self'; style-src 'self'; "
                 "connect-src 'self'; img-src 'self' data:"
             )
         if (path == '/' or path.startswith('/api/') or path.startswith('/auth/')

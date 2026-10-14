@@ -19,7 +19,10 @@ def test_security_headers_on_success_and_early_rejections(client, app_settings):
     page = client.get("/")
     assert page.status_code == 200
     assert page.headers["x-frame-options"] == "DENY"
-    assert page.headers["content-security-policy"].startswith("default-src 'self'")
+    csp = page.headers["content-security-policy"]
+    assert csp.startswith("default-src 'self'")
+    assert "style-src 'self';" in csp
+    assert "'unsafe-inline'" not in csp
     assert page.headers["cache-control"] == "no-store"
     assert page.headers["permissions-policy"]
     batch = {"events": []}
@@ -62,3 +65,12 @@ def test_chunked_body_rejected_before_buffering_after_rate_limit(app_settings):
         )
         assert too_big.status_code == 413
         assert too_big.headers["x-content-type-options"] == "nosniff"
+
+
+def test_protocol_legend_avoids_inline_style_attributes():
+    """Strict CSP relies on CSSOM updates, not dynamically inserted style HTML."""
+    from pathlib import Path
+
+    source = (Path(__file__).parents[1] / "networkpulse/static/app.js").read_text()
+    assert "dot.style.backgroundColor = colors" in source
+    assert '<i style=' not in source
