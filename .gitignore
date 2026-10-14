@@ -24,3 +24,11 @@ archive-audit-reports/
 *.pcap
 *.pcapng
 *.zip
+
+# Sensitive database snapshots / integrity manifests must never be committed.
+backups/
+*.dump
+*.backup
+*.custom
+*.dump.manifest.json
+*.sqlite.manifest.json

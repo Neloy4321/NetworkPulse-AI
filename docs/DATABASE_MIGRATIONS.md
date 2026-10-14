@@ -1,11 +1,11 @@
 # Database Integrity & Migration Runbook
 
-> **Version:** 0.2 database upgrade. The migration is deliberately explicit: `networkpulse db upgrade`.
-> Local tests cover SQLite, including an in-place v0.1 upgrade and backup/restore. PostgreSQL migration scripts are implemented but **not independently integration-tested with a running PostgreSQL server** in this release.
+> **Version:** schema revision `0006_behavior_incidents`. Migrations are deliberately explicit: `networkpulse db upgrade`.
+> CI exercises SQLite and PostgreSQL 16, including migrations and native PostgreSQL dump/restore drills; neither CI nor its fixtures verify a customer's production backup or disaster-recovery readiness.
 
 ## What changed
 
-- Alembic revisions: `0001_legacy_baseline` → `0002_counter_integrity` → `0003_soc_accountability` → `0004_behavior_findings`.
+- Alembic revisions: `0001_legacy_baseline` → `0002_counter_integrity` → `0003_soc_accountability` → `0004_behavior_findings` → `0005_mlops_drift_runs` → `0006_behavior_incidents`.
 - PostgreSQL `network_events.orig_bytes`, `resp_bytes`, `orig_pkts`, `resp_pkts` use `BIGINT`. SQLite's `INTEGER` already supports signed 64-bit values and is left intact.
 - Indexes optimized for `(anomalous, timestamp)`, `(src_ip, timestamp)` and `(status, created_at)`; their effectiveness on real workload still needs query-plan benchmarking.
 - Ingestion uses atomic PostgreSQL/SQLite `INSERT ... ON CONFLICT DO NOTHING ... RETURNING`, in bounded batches, with event and alert creation in **one transaction**.
@@ -92,3 +92,7 @@ Revision `0005_mlops_drift_runs` adds immutable, model-SHA and exact-input-finge
 ## Revision 0006 — multi-window SOC incident episodes
 
 The forward-only `0006_behavior_incidents` migration adds `behavior_incidents` and `behavior_incident_audit`, leaving all historical flow alerts, per-window findings, MLOps drift evidence and human ownership unchanged. Back up PostgreSQL with pg_dump (or SQLite with the built-in backup) before upgrading. The application intentionally refuses to start against an old schema. Incident IDs are deterministic by source and UTC hour, not attack attribution; source-window evidence is referenced by immutable finding identifiers. Analysts approve status/assignment changes, not automation.
+
+## Executable disaster-recovery gate (PostgreSQL and SQLite)
+
+`networkpulse db snapshot --output /secure/private/backup.dump` creates an owner-only, native engine snapshot and sidecar SHA-256 manifest. `networkpulse db verify-snapshot --output ...` validates the archive's byte count/digest and current migration revision without importing any rows. `networkpulse db recovery-drill --output ... --restore-url <separately-provisioned-empty-DRILL-URL> --expected-sha256 <APPROVED-DIGEST> --confirm-isolated-target` restores to a disposable, distinct database and verifies SOC relational integrity and nine operational table counts. It **never overwrites** an existing database or touches production restoration targets. See [the full safety limits and commands](DISASTER_RECOVERY_DRILL.md). Model artifacts, Redis state, recovery encryption, RPO/RTO and offsite retention are not bundled in this SQL snapshot.
