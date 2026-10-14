@@ -224,3 +224,21 @@ def test_real_redis_collector_survives_rotation_and_backpressure(tmp_path):
     finally:
         client.delete(key, queue.dead_letter)
         client.close()
+
+
+def test_copytruncate_then_fast_regrowth_is_detected_by_anchor(tmp_path):
+    """Same inode and larger size must not disguise overwritten flow history."""
+    from networkpulse.streaming.collector import ContinuityError
+
+    source = tmp_path / "conn.jsonl"
+    checkpoint = tmp_path / "checkpoint.json"
+    source.write_text("".join(_as_lines(sample_flows(100, seed=2610)[:3])))
+    c = LogCollector(source, "canonical", checkpoint, lambda _: None)
+    assert c.poll_once(max_rows=2)["published"] == 2
+    saved = checkpoint.read_bytes()
+    offset = json.loads(saved)["offset"]
+    # Copytruncate followed by fast growth: old size bound is again satisfied.
+    source.write_bytes(b"Z" * (offset + 100))
+    with pytest.raises(ContinuityError, match="rewritten"):
+        c.poll_once()
+    assert checkpoint.read_bytes() == saved
