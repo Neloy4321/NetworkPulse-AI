@@ -79,6 +79,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     if settings.deployment_mode == "production":
         if model is None or "synthetic" in str(model.metadata.get("source", "")).lower():
             raise ValueError("Production refuses missing or synthetic/demo model artifacts")
+    from networkpulse.deployment_preflight import require_runtime_release
+    require_runtime_release(settings)
     verifier = (TokenVerifier(settings.oidc_issuer, settings.oidc_audience,
                               settings.oidc_jwks_url, settings.oidc_role_claim)
                 if settings.auth_mode == "oidc" else None)

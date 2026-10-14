@@ -290,7 +290,8 @@ def process_events(queue: FlowStream, consumer: str, *, settings, once: bool = F
     from networkpulse.ops_health import mark_success
     from pathlib import Path
 
-    queue.initialize()
+    from networkpulse.deployment_preflight import require_runtime_release
+    require_runtime_release(settings)
     if settings.deployment_mode == "production" and not settings.model_sha256:
         raise ValueError("Production stream worker requires MODEL_SHA256")
     if settings.model_sha256:
@@ -299,10 +300,13 @@ def process_events(queue: FlowStream, consumer: str, *, settings, once: bool = F
                 sha256(settings.model_path) != settings.model_sha256):
             raise ValueError("Trusted model artifact SHA-256 verification failed")
     detector = Detector.load(settings.model_path)
-    if settings.deployment_mode == "production" and (
+    if (settings.deployment_mode == "production" or
+            os.getenv("NETWORKPULSE_MODEL_REGISTRY_ROOT")) and (
         "synthetic" in str(detector.metadata.get("source", "")).lower()
     ):
         raise ValueError("Production stream worker refuses synthetic/demo model")
+    # Never create a consumer/read messages until the release is trusted.
+    queue.initialize()
     maker = build_sessions(settings.database_url)
     unique_consumer = f"{consumer}:{socket.gethostname()}:{os.getpid()}"
 

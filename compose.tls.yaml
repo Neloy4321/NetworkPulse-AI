@@ -19,6 +19,10 @@ services:
   worker:
     environment:
       MODEL_SHA256: ${MODEL_SHA256:?Required trusted model SHA for worker}
+      NETWORKPULSE_MODEL_REGISTRY_ROOT: /app/data/registry
+  mlops-worker:
+    environment:
+      NETWORKPULSE_MODEL_REGISTRY_ROOT: /app/data/registry
   api:
     depends_on:
       security-redis:
@@ -26,6 +30,7 @@ services:
     environment:
       NETWORKPULSE_DEPLOYMENT: production
       MODEL_SHA256: ${MODEL_SHA256:?Prevalidated production model SHA-256 required}
+      NETWORKPULSE_MODEL_REGISTRY_ROOT: /app/data/registry
       NETWORKPULSE_AUTH_MODE: oidc
       NETWORKPULSE_BROWSER_OIDC: "true"
       NETWORKPULSE_OIDC_ISSUER: ${NETWORKPULSE_OIDC_ISSUER:?Set trusted HTTPS issuer}

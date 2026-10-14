@@ -57,6 +57,13 @@ def test_production_app_disables_documentation_at_source(monkeypatch, app_settin
         oidc_client_id="networkpulse-browser",
         public_origin="https://soc.example.test",
     )
+    # Production now requires a registry approved active release, not only
+    # a checksum pin; this is test-only registry state, not site approval.
+    from networkpulse.model_registry import ModelRegistry
+    registry = ModelRegistry(tmp_path / "registry")
+    registry.register("access-control-fixture", target)
+    registry.promote("access-control-fixture", target)
+    monkeypatch.setenv("NETWORKPULSE_MODEL_REGISTRY_ROOT", str(registry.root))
     with TestClient(create_app(config), base_url="https://soc.example.test") as client:
         for path in ("/docs", "/redoc", "/openapi.json"):
             assert client.get(path).status_code == 404

@@ -344,10 +344,13 @@ class ModelRegistry:
         path = Path(destination)
         if not path.is_file() or sha256(path) != record['sha256']:
             raise ValueError('deployed model artifact checksum differs from registered release')
-        if not self._valid_artifact(active).is_file():
-            raise ValueError('registry source candidate missing')
+        # A stale or modified candidate cannot be treated as a verified release.
+        # The deployed file alone is not sufficient to establish registry integrity.
+        self._valid_artifact(active)
         return {
             'active': active, 'sha256': record['sha256'],
+            'feature_version': record.get('feature_version'),
+            'synthetic_only': record.get('synthetic_only', False),
             'consistent': True,
             'history_entries': len(data['history']),
             'warning': 'Checksum consistency is not code provenance or site performance approval',
