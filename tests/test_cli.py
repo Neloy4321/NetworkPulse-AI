@@ -32,7 +32,7 @@ def test_bootstrap_idempotency(tmp_path, monkeypatch, capsys):
 
 def test_ingest_examples(tmp_path, monkeypatch, capsys):
     from pathlib import Path
-    monkeypatch.setenv("NETWORKPULSE_API_KEY", "example-demo-key-strong-123")
+    monkeypatch.setenv("NETWORKPULSE_API_KEY", "ci-unique-local-test-key-strong-123")
     monkeypatch.setenv("DATABASE_URL", "sqlite:///" + str(tmp_path / "np.db"))
     monkeypatch.setenv("MODEL_PATH", str(tmp_path / "np.joblib"))
     upgrade_database("sqlite:///" + str(tmp_path / "np.db"))
