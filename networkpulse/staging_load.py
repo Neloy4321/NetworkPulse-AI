@@ -141,7 +141,7 @@ def _verify_exact(maker, keys: list[str]) -> int:
 
 
 def run_staging_load(*, events: list[FlowEvent], client, maker, model,
-                     plan: StagingPlan) -> dict:
+                     plan: StagingPlan, run_id: str | None = None) -> dict:
     """Paced producer and concurrent real SQL/Redis worker, bounded recovery.
 
     An injected one-time handler fault occurs strictly before the DB commit.
@@ -154,7 +154,9 @@ def run_staging_load(*, events: list[FlowEvent], client, maker, model,
     if len(set(keys)) != len(keys):
         raise ValueError("Workload contains duplicate canonical IDs")
     _verify_absent(maker, keys)
-    run_id = uuid.uuid4().hex
+    run_id = uuid.uuid4().hex if run_id is None else run_id
+    if len(run_id) != 32 or any(ch not in "0123456789abcdef" for ch in run_id):
+        raise ValueError("Staging run identifier must be exactly 32 lowercase hex characters")
     stream = "networkpulse:staging:" + run_id
     queue = FlowStream(
         client, stream=stream, group="staging-validation",
@@ -311,7 +313,9 @@ def write_report(path: Path, report: dict) -> None:
             output.write("\n")
             output.flush()
             os.fsync(output.fileno())
-        os.replace(candidate, path)
+        # Hard-link creation fails atomically when evidence already exists.
+        # An operator cannot silently overwrite/erase a prior accepted run.
+        os.link(candidate, path)
         directory = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
         try:
             os.fsync(directory)
