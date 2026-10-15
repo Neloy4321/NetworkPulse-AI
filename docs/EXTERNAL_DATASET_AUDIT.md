@@ -1,5 +1,11 @@
 # External network dataset audit — 2026-10-14
 
+**2026-10-15 UPDATE:** This page is a dated historical inventory. The statement
+below that no real models were tested is no longer current. A real native
+UNSW → TON experiment subsequently ran and FAILED the FPR quality gate.
+See [the new three-archive ZIP tree re-audit](DATASET_REAUDIT_2026_10_15.md)
+and [measured native ML outcome](CROSS_DATASET_NATIVE_EVIDENCE.md).
+
 **Status:** Real archival file structure and bounded samples have been inspected.
 **No model has been fitted or benchmarked on these external datasets yet.**
 Source CSV/ZIP bytes were not committed to this repository. The temporary GitHub
