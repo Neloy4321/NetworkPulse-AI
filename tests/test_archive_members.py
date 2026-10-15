@@ -7,7 +7,7 @@ import zipfile
 
 import pytest
 
-from networkpulse.evaluation.archive_members import resolve_csv_member
+from networkpulse.evaluation.archive_members import archive_tree_summary, resolve_csv_member
 
 
 def archive(entries: list[tuple[str, str]]) -> zipfile.ZipFile:
@@ -30,6 +30,16 @@ def test_root_and_nested_csv_member():
         assert resolve_csv_member(zf, "Monday-WorkingHours.pcap_ISCX.csv").filename.startswith(
             "MachineLearningCVE/"
         )
+
+
+def test_archive_tree_contains_nested_paths_without_traffic_data():
+    with archive([("nested/data.csv", "private-flow"), ("other/deeper/file.zip", "x")]) as zf:
+        tree = archive_tree_summary(zf)
+    assert tree["entry_count"] == 2
+    assert tree["file_count"] == 2
+    assert tree["entries"][0]["path"] == "nested/data.csv"
+    assert tree["embedded_zip_members"] == ["other/deeper/file.zip"]
+    assert "private-flow" not in str(tree)
 
 
 def test_missing_or_ambiguous_member_fails_closed():
