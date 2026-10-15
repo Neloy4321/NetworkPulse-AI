@@ -110,6 +110,17 @@ def load_source(path: Path, fmt: str, expected_sha256: str, count: int
     return events, digest
 
 
+def wait_until(deadline: float, *, clock=None, sleeper=None) -> None:
+    """Pace on a monotonic clock without ever requesting a negative sleep."""
+    clock = time.monotonic if clock is None else clock
+    sleeper = time.sleep if sleeper is None else sleeper
+    while True:
+        remaining = deadline - clock()
+        if remaining <= 0:
+            return
+        sleeper(min(0.01, remaining))
+
+
 def percentile(values: list[float], fraction: float) -> float:
     if not values:
         raise ValueError("No successful completion samples")
@@ -233,14 +244,7 @@ def run_staging_load(*, events: list[FlowEvent], client, maker, model,
                         future.result()
                         raise RuntimeError("Worker stopped before publisher completed")
                     schedule = start + index / plan.rate
-                    # Read the monotonic clock only once per iteration:
-                    # a second read can cross the deadline and otherwise
-                    # pass a negative duration into sleep() under load.
-                    while True:
-                        remaining = schedule - time.monotonic()
-                        if remaining <= 0:
-                            break
-                        time.sleep(min(0.01, remaining))
+                    wait_until(schedule)
                     while True:
                         if time.monotonic() > deadline:
                             raise TimeoutError("Staging publisher exceeded deadline")
