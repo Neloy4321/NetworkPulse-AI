@@ -1,8 +1,10 @@
 # P0 dataset ZIP re-audit and archive-structure controls — 2026-10-15
 
-**Status: PARTIAL new audit; full P0 field-site acceptance NOT DEMONSTRATED.**
-This note separates current direct inspection from previously archived GitHub Actions
-metadata; it does not represent a new complete read of the two large archives.
+**Status: full archive member-tree reverified for all three ZIPs; full raw-row scan
+only for CIC. P0 field-site acceptance NOT DEMONSTRATED.**
+CIC was audited directly; the two larger archives were downloaded, size/hash-checked
+and ZIP member trees emitted in a newly successful GitHub Actions run on PR #23.
+Earlier all-file row and sampled schema profiles remain separately attributed.
 
 ## Original user-provided archives
 
@@ -39,11 +41,23 @@ publish original flow rows, identifying addresses, the archives, or private labe
   This nested path **must not** be flattened or blindly treated as a root CSV.
   The directory contains no additional nested files in the checked ZIP.
 
-The two large archives could not be re-downloaded through the current Google
-Drive connector (256 MiB single-file download limit). Their member trees above
-were recovered from unexpired **original GitHub Actions manifest artifacts**,
-not extrapolated from filenames and not newly rescanned raw bytes. Recheck each
-actual archive checksum when running a new authorized ephemeral Actions audit.
+The two large archives could not be downloaded directly into the local audit
+environment through Google Drive (256 MiB connector limit). However, **a fresh
+GitHub Actions PR #23 run 38780396229** successfully downloaded and verified
+both full ZIP SHA-256 hashes, recorded **all ZIP member paths and sizes** and
+completed the native evaluation. The downloaded aggregate-only artifact
+`11995925767` (`native-unsw-to-ton.json`) was inspected locally; its
+extracted report SHA-256 is
+`10480303210a074c74c836644a4b5445be83bb3ea586bcf7d67a6024a25b0a4c`.
+Fresh inventory: UNSW **5 root files, zero embedded archives**; TON **23 root
+files, zero embedded archives**. This confirms member layout and pinned ZIP
+identity *in the new run*. The October 13 manifests are still the source of
+the all-member physical-line counts and window-sampled schema/labels, which
+were not repeated on every member in October 15 native run.
+
+The new run preserved exactly **FP 105 / benign 480, FPR 21.875%; TP 4,507 /
+attack 4,520, recall 99.7124%; operational acceptance FAILED**. The CI
+execution outcome passed, which is not ML model acceptance.
 
 ## CIC-IDS2017: actual complete local CSV row scan
 
