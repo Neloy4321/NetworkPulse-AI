@@ -167,3 +167,19 @@ def test_guard_rejects_wrong_database_and_default_redis_db():
     finally:
         maker.kw["bind"].dispose()
         client.close()
+
+
+def test_monotonic_producer_pacing_never_uses_negative_sleep():
+    from networkpulse.staging_load import wait_until
+
+    # A time jump across the scheduling deadline must cause termination,
+    # rather than re-reading the clock and attempting sleep(-epsilon).
+    readings = iter([10.99, 11.0001])
+    calls = []
+    wait_until(11.0, clock=lambda: next(readings), sleeper=calls.append)
+    assert len(calls) == 1
+    assert calls[0] == pytest.approx(.01)
+    assert all(value > 0 for value in calls)
+
+    wait_until(10.0, clock=lambda: 10.0001,
+               sleeper=lambda _: pytest.fail("Should already be due"))
