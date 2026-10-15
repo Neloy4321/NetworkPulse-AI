@@ -170,12 +170,13 @@ def run_staging_load(*, events: list[FlowEvent], client, maker, model,
     failure_count = 0
     recoveries = 0
     ack_count = 0
+    inserted_rows = 0
     max_queue_depth = 0
     start = time.monotonic()
     deadline = start + plan.duration_seconds + plan.drain_timeout_seconds
 
     def worker():
-        nonlocal failure_count, recoveries, ack_count
+        nonlocal failure_count, recoveries, ack_count, inserted_rows
         consumer = "staging-before-failure:" + run_id
         inject = True
         while not done.is_set() or client.xlen(stream) > 0:
@@ -187,7 +188,9 @@ def run_staging_load(*, events: list[FlowEvent], client, maker, model,
                     inject = False
                     raise ConnectionError("One-time controlled pre-commit fault")
                 with maker() as session:
-                    ingest(session, model, batch)
+                    receipt = ingest(session, model, batch)
+                with shared_lock:
+                    inserted_rows += receipt["inserted"]
 
             def record_ack(ids):
                 nonlocal ack_count
@@ -253,6 +256,8 @@ def run_staging_load(*, events: list[FlowEvent], client, maker, model,
             raise RuntimeError("Injected handler-failure recovery was not observed")
         if ack_count != len(events) or len(queue_latencies) != len(events):
             raise RuntimeError("ACK reconciliation failed; preserve Redis state for triage")
+        if inserted_rows != len(events):
+            raise RuntimeError("Staging contained preexisting or concurrent event IDs")
         if client.xlen(stream) != 0:
             raise RuntimeError("Live Redis stream was not completely drained")
         if client.xpending(stream, queue.group)["pending"] != 0:
@@ -273,7 +278,8 @@ def run_staging_load(*, events: list[FlowEvent], client, maker, model,
             "scheduled_seconds": plan.duration_seconds,
             "measured_elapsed_seconds": round(elapsed, 3),
             "published": len(events), "acknowledged_after_commit": ack_count,
-            "persisted_unique_event_ids": verified, "pending": 0, "dead_letters": 0,
+            "persisted_unique_event_ids": verified,
+            "new_sql_rows_inserted": inserted_rows, "pending": 0, "dead_letters": 0,
             "fault_injection": "one_precommit_handler_exception_not_node_failover",
             "injected_failure_batches": failure_count, "recovered_consumer_switches": recoveries,
             "peak_sampled_queue_depth": max_queue_depth,
