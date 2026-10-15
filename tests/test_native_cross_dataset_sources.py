@@ -54,6 +54,21 @@ def test_quota_failure_detected_when_download_returns_none_and_writes_stderr(tmp
     assert report["unavailable_sources"][0]["file"] == "source.zip"
 
 
+def test_quota_failure_none_stderr_without_partial_file(tmp_path: Path):
+    payload = b"abc" * 300
+    archive = _archive(tmp_path, "source.zip", payload)
+
+    def downloader(**kwargs):
+        _ = kwargs
+        print("Too many users have viewed or downloaded this file recently.", file=__import__("sys").stderr)
+        return None
+
+    ready, report = fetch_authorized_archives((archive,), downloader, attempts=1, sleep_fn=lambda *_: None)
+    assert ready is False
+    assert report["status"] == "unavailable-source"
+    assert "too many users" in report["unavailable_sources"][0]["error"].lower()
+
+
 def test_retry_recovery_preserves_partial_download_for_resume(tmp_path: Path):
     payload = b"0123456789" * 200
     archive = _archive(tmp_path, "source.zip", payload)
@@ -89,6 +104,22 @@ def test_non_retryable_error_fails_closed(tmp_path: Path):
     assert ready is False
     assert state["attempt"] == 1
     assert "403 forbidden" in report["unavailable_sources"][0]["error"]
+
+
+def test_non_retryable_error_with_partial_file_fails_promptly(tmp_path: Path):
+    payload = b"x" * 128
+    archive = _archive(tmp_path, "source.zip", payload)
+    state = {"attempt": 0}
+
+    def downloader(**kwargs):
+        state["attempt"] += 1
+        Path(kwargs["output"]).write_bytes(payload[:16])
+        raise RuntimeError("403 Forbidden")
+
+    ready, report = fetch_authorized_archives((archive,), downloader, attempts=3, sleep_fn=lambda *_: None)
+    assert ready is False
+    assert state["attempt"] == 1
+    assert "403 forbidden" in report["unavailable_sources"][0]["error"].lower()
 
 
 def test_checksum_mismatch_rejected(tmp_path: Path):
@@ -139,3 +170,11 @@ def test_partial_file_without_explicit_quota_message_is_retried(tmp_path: Path):
     ready, report = fetch_authorized_archives((archive,), downloader, attempts=2, sleep_fn=lambda *_: None)
     assert ready is True
     assert report["status"] == "ready"
+
+
+def test_workflow_contains_explicit_fail_closed_step():
+    workflow = Path("/home/runner/work/NetworkPulse-AI/NetworkPulse-AI/.github/workflows/native-cross-dataset.yml")
+    content = workflow.read_text(encoding="utf-8")
+    assert "Fail when authorized source archives are unavailable" in content
+    assert "steps.fetch-sources.outputs.ready != 'true'" in content
+    assert "exit 1" in content

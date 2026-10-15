@@ -19,8 +19,15 @@ TRANSIENT_MARKERS = (
     "quota",
     "rate limit",
     "try accessing the file again later",
-    "failed to retrieve file url",
     "temporarily unavailable",
+)
+
+NON_RETRYABLE_MARKERS = (
+    "403",
+    "forbidden",
+    "permission denied",
+    "access denied",
+    "cannot access contents of this file",
 )
 
 
@@ -44,6 +51,11 @@ def _sha256(path: Path) -> str:
 def _is_transient(message: str) -> bool:
     lowered = (message or "").lower()
     return any(marker in lowered for marker in TRANSIENT_MARKERS)
+
+
+def _is_non_retryable(message: str) -> bool:
+    lowered = (message or "").lower()
+    return any(marker in lowered for marker in NON_RETRYABLE_MARKERS)
 
 
 def _verify(path: Path, expected_bytes: int, expected_sha256: str) -> str | None:
@@ -107,13 +119,14 @@ def fetch_authorized_archives(
                 verification_error = None
 
             partial = file_exists and size < archive.expected_bytes
+            non_retryable = _is_non_retryable(combined_error) if combined_error else False
             transient = _is_transient(combined_error) if combined_error else False
             if not combined_error and not result and not partial:
                 combined_error = "Authorized source ZIP unavailable; no claim"
             if combined_error:
                 last_error = combined_error
 
-            retryable = partial or transient or verification_error is not None
+            retryable = (partial or transient or verification_error is not None) and not non_retryable
             if not retryable:
                 unavailable.append({"file": archive.name, "error": last_error})
                 break

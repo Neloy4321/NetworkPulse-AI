@@ -8,9 +8,11 @@ on:
       - 'networkpulse/evaluation/domain_shift_diagnostics.py'
       - 'networkpulse/evaluation/archive_members.py'
       - 'networkpulse/evaluation/live_unsw.py'
+      - 'networkpulse/evaluation/native_cross_dataset_sources.py'
       - 'tests/test_archive_members.py'
       - 'tests/test_unsw_to_toniot.py'
       - 'tests/test_domain_shift_diagnostics.py'
+      - 'tests/test_native_cross_dataset_sources.py'
   push:
     branches: [main]
     paths:
@@ -19,9 +21,11 @@ on:
       - 'networkpulse/evaluation/domain_shift_diagnostics.py'
       - 'networkpulse/evaluation/archive_members.py'
       - 'networkpulse/evaluation/live_unsw.py'
+      - 'networkpulse/evaluation/native_cross_dataset_sources.py'
       - 'tests/test_archive_members.py'
       - 'tests/test_unsw_to_toniot.py'
       - 'tests/test_domain_shift_diagnostics.py'
+      - 'tests/test_native_cross_dataset_sources.py'
   workflow_dispatch:
 permissions:
   contents: read
@@ -38,7 +42,7 @@ jobs:
       - name: Install native runtime and authorized downloader
         run: python -m pip install -e '.[dev]' 'gdown>=5.2,<6'
       - name: Unit-test security and native adapter
-        run: python -m pytest -q tests/test_unsw_to_toniot.py tests/test_archive_members.py tests/test_domain_shift_diagnostics.py
+        run: python -m pytest -q tests/test_unsw_to_toniot.py tests/test_archive_members.py tests/test_domain_shift_diagnostics.py tests/test_native_cross_dataset_sources.py
       - name: Download two authorized real source archives
         id: fetch-sources
         run: >
