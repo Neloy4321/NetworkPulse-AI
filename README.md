@@ -378,3 +378,13 @@ Implemented bounded fail-closed rate buckets, response security headers, spreads
   synthetic-data passive DAST scan is **not** an independent penetration test.
 
 **No real identity-provider login or publicly exposed deployment has been validated.**
+
+### Isolated staging sustained-load acceptance
+
+The operator-only `networkpulse staging-load` workflow validates an authorized
+real flow corpus against an isolated PostgreSQL `*_staging` database and
+non-default Redis database with signed model preflight, paced traffic, a
+controlled pre-commit recovery interruption and immutable exact-ID/latency
+acceptance evidence. It refuses unapproved production targets and never
+certifies actual Redis/PostgreSQL node failover. See
+[staging load validation runbook](docs/STAGING_LOAD_VALIDATION.md).
