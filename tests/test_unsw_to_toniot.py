@@ -50,3 +50,21 @@ def test_single_class_not_misreported():
         metrics(ev,[SimpleNamespace(anomalous=False,anomaly_score=0.)]*120)
     with pytest.raises(ValueError):
         num({"x":"nan"},"x")
+
+
+def test_ton_duplicate_headers_fail_closed_in_nested_member():
+    """A case-folded duplicate must not overwrite genuine telemetry fields."""
+    import io
+    import zipfile
+    from networkpulse.evaluation.unsw_to_toniot import ton_sample
+    data = io.BytesIO()
+    with zipfile.ZipFile(data, "w") as archive:
+        archive.writestr(
+            "any/subfolder/Network_dataset_23.csv",
+            "ts,TS,src_ip,src_port,dst_ip,dst_port,proto,duration,"
+            "src_bytes,dst_bytes,src_pkts,dst_pkts,conn_state,label,type\\n",
+        )
+    data.seek(0)
+    with zipfile.ZipFile(data) as archive:
+        with pytest.raises(ValueError, match="duplicate source headers"):
+            ton_sample(archive, cap=1000)

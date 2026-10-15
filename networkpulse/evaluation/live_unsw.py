@@ -22,6 +22,7 @@ from sklearn.metrics import (average_precision_score, confusion_matrix,
                              precision_recall_fscore_support, roc_auc_score)
 
 from networkpulse.detector import train
+from networkpulse.evaluation.archive_members import resolve_csv_member
 from networkpulse.schemas import FlowEvent
 from networkpulse.simulator import sample_flows
 from networkpulse.evaluation.unsw import _hash_file
@@ -65,12 +66,15 @@ def read_reservoir(zf: zipfile.ZipFile, name: str, limit: int, seed: int):
     rows = []
     counters = Counter()
     labels = Counter()
-    with zf.open(name) as f:
+    with zf.open(resolve_csv_member(zf, name)) as f:
         reader = csv.DictReader(
             io.TextIOWrapper(f, encoding="utf-8-sig", errors="replace", newline=""),
             fieldnames=UNSW_COLUMNS,
         )
         for row in reader:
+            if None in row or any(value is None for value in row.values()):
+                counters["rejected"] += 1
+                continue
             try:
                 event = raw_unsw_to_event(row)
             except (ValueError, KeyError, OverflowError, TypeError):

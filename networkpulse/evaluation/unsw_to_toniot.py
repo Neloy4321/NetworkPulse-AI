@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from sklearn.metrics import average_precision_score, roc_auc_score
 from networkpulse.detector import Detector, train
+from networkpulse.evaluation.archive_members import archive_tree_summary, resolve_csv_member
 from networkpulse.evaluation.live_unsw import read_reservoir
 from networkpulse.generalization_evidence import normalized_flow_fingerprint, wilson_interval
 from networkpulse.schemas import FlowEvent
@@ -63,11 +64,17 @@ def ton_sample(archive, cap=5000, seed=43):
         raise ValueError("Sample cap must be 1000..50000")
     sample, counts, rejected, valid = [], Counter(), 0, 0
     randomizer = random.Random(seed)
-    with archive.open("Network_dataset_23.csv") as stream:
+    with archive.open(resolve_csv_member(archive, "Network_dataset_23.csv")) as stream:
         reader = csv.DictReader(io.TextIOWrapper(stream,encoding="utf-8-sig",newline=""))
-        if not REQUIRED.issubset({str(k).strip().lower() for k in reader.fieldnames or ()}):
+        normalized_header = [str(k).strip().lower() for k in reader.fieldnames or ()]
+        if len(normalized_header) != len(set(normalized_header)):
+            raise ValueError("TON has ambiguous duplicate source headers")
+        if not REQUIRED.issubset(normalized_header):
             raise ValueError("TON dataset lacks authentic native flow fields")
         for row in reader:
+            if None in row or any(value is None for value in row.values()):
+                rejected += 1
+                continue
             try:
                 event = to_native(row)
             except (ValueError,TypeError,OverflowError,KeyError):
@@ -149,11 +156,13 @@ def run(unsw_path,ton_path):
     if digest(unsw_path)!=UNSW_SHA or digest(ton_path)!=TON_SHA:
         raise ValueError("Real source bytes changed from approved checksums")
     with zipfile.ZipFile(unsw_path) as zf:
+        unsw_tree = archive_tree_summary(zf)
         train_sample,train_info=read_reservoir(zf,"UNSW-NB15_1.csv",2200,42)
     training,removed_train=unique(train_sample)
     if len(training)<1000:
         raise ValueError("Insufficient UNSW fit population")
     with zipfile.ZipFile(ton_path) as zf:
+        ton_tree = archive_tree_summary(zf)
         external_sample,external_info=ton_sample(zf)
     test,removed_test=unique(external_sample,
         {e.key() for e in training},
@@ -174,6 +183,7 @@ def run(unsw_path,ton_path):
         "original_signed_production_model_tested":False,"production_certified":False,
         "train_dataset":"UNSW-NB15 raw 2015","test_dataset":"TON-IoT 2019",
         "training_zip_sha256":UNSW_SHA,"test_zip_sha256":TON_SHA,
+        "training_zip_tree":unsw_tree,"test_zip_tree":ton_tree,
         "train_member":"UNSW-NB15_1.csv","test_member":"Network_dataset_23.csv",
         "native_detector_actual_score_code":True,
         "frozen_research_model_sha256":model_sha,
