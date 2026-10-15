@@ -24,13 +24,14 @@ class Event:
     timestamp: datetime
     label: str
     source: str = "canonical"
+    flow_port: int | None = None
 
     def key(self):
         return self.identifier
 
     def model_dump(self, mode="json", exclude=None):
         payload = {"timestamp": self.timestamp.isoformat(), "src_ip": "10.0.1.2",
-                   "dst_ip": "10.0.1.3", "src_port": 40000, "dst_port": 443,
+                   "dst_ip": "10.0.1.3", "src_port": self.flow_port or (1024 + int(self.identifier, 16) % 50000), "dst_port": 443,
                    "proto": "tcp", "orig_bytes": 80, "resp_bytes": 400,
                    "source": self.source, "uid": self.identifier, "label": self.label}
         return {k: v for k, v in payload.items() if k not in (exclude or ())}
@@ -183,3 +184,13 @@ def test_same_flow_from_different_adapter_still_fails_overlap(tmp_path):
     training = TrainingLedger(frozenset({"f" * 32}), frozenset({normalized}))
     with pytest.raises(ValueError, match="normalized-flow overlap"):
         eval_run(tmp_path, events, training=training)
+
+
+def test_duplicate_same_holdout_flow_with_distinct_adapter_uid_rejected(tmp_path):
+    events = dataset()
+    original = events[0]
+    events[-1] = Event(identifier="a" * 32, timestamp=original.timestamp,
+                       label=original.label, source="zeek",
+                       flow_port=1024 + int(original.identifier, 16) % 50000)
+    with pytest.raises(ValueError, match="Duplicate normalized flow"):
+        eval_run(tmp_path, events)

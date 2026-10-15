@@ -171,16 +171,27 @@ def evaluate_frozen_holdout(
     # Score all records without writing flow metadata or retraining.
     def observed():
         chunk = []
+        observed_fingerprints = set()
+        observed_ids = set()
         for event in records_factory():
             if event.source == "simulator":
                 raise ValueError("Synthetic simulator records cannot validate field generalization")
             if event.label not in ("benign", "anomaly"):
                 raise ValueError("Every holdout event requires independently labeled ground truth")
             key = event.key()
+            if key in observed_ids:
+                raise ValueError("Duplicate canonical flow key in independent holdout")
+            observed_ids.add(key)
             if key in training_keys.canonical_ids:
                 raise ValueError("Training/holdout canonical-ID overlap detected")
-            if normalized_flow_fingerprint(event) in training_keys.normalized_fingerprints:
+            fingerprint = normalized_flow_fingerprint(event)
+            if fingerprint in training_keys.normalized_fingerprints:
                 raise ValueError("Training/holdout normalized-flow overlap detected")
+            if fingerprint in observed_fingerprints:
+                raise ValueError("Duplicate normalized flow in independent holdout")
+            observed_fingerprints.add(fingerprint)
+            if len(observed_fingerprints) > spec.max_rows:
+                raise ValueError("Holdout exceeds pre-registered row limit")
             chunk.append(event)
             if len(chunk) >= 128:
                 yield from batch_observations(chunk)
@@ -322,3 +333,31 @@ def write_evidence_once(path: Path, report: dict) -> None:
     finally:
         if os.path.exists(pending):
             os.unlink(pending)
+
+
+def verify_training_source_ledger(source: Path, source_sha256: str,
+                                  ledger_sha256: str, *, max_rows: int = 500_000) -> int:
+    """Recompute the exact ledger from an independently pinned original source."""
+    from networkpulse.adapters import iter_jsonl
+
+    if not valid_sha(source_sha256) or digest_file(source) != source_sha256:
+        raise ValueError("Original training corpus SHA256 mismatch")
+    if not valid_sha(ledger_sha256):
+        raise ValueError("Training ledger SHA256 is invalid")
+    records, seen = [], set()
+    for event in iter_jsonl(source, "canonical"):
+        key = event.key()
+        if key in seen:
+            raise ValueError("Original training corpus contains duplicate canonical keys")
+        if len(records) >= max_rows:
+            raise ValueError("Original training source exceeds bounded ledger cap")
+        seen.add(key)
+        records.append((key, normalized_flow_fingerprint(event)))
+    if not records or digest_file(source) != source_sha256:
+        raise ValueError("Original training source is empty or changed during verification")
+    digest = hashlib.sha256()
+    for key, fingerprint in sorted(records):
+        digest.update((key + "\t" + fingerprint + "\n").encode("utf-8"))
+    if digest.hexdigest() != ledger_sha256:
+        raise ValueError("Original training corpus and ID ledger do not match")
+    return len(records)

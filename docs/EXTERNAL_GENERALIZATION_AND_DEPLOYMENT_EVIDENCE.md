@@ -88,6 +88,7 @@ python -m tools.run_frozen_external_holdout \
   --spec /private/external-holdout-spec.json \
   --model /secure/approved-model.joblib \
   --registry-root /secure/approved-registry \
+  --original-training-corpus /private/original-train.jsonl \
   --training-event-ids /private/evidence/original-training-ledger.tsv \
   --training-event-ids-sha256 '<ledger-sha256>' \
   --report /private/evidence/site-b-external-evaluation.json
@@ -98,6 +99,8 @@ The evaluation:
 - Scores the **unchanged** approved model, without training/SMOTE/threshold
   adjustment, and refuses corrupt or SHA-mismatched model bytes **before**
   loading joblib/pickle.
+- Reconstructs original training-corpus ledger SHA256 to reject omitted or substituted training rows.
+- Rejects repeated normalized flows under distinct external-corpus UIDs.
 - Requires complete benign/anomaly labels, distinct train/test domain names,
   different train/holdout SHA-256, unique canonical event IDs and zero overlap
   against both training-ledger hashes.

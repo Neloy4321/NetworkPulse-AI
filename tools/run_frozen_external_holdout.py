@@ -13,7 +13,8 @@ from networkpulse.adapters import iter_jsonl
 from networkpulse.deployment_preflight import verify_deployment_model
 from networkpulse.detector import Detector
 from networkpulse.generalization_evidence import (
-    ExternalHoldoutSpec, evaluate_frozen_holdout, load_training_keys, write_evidence_once,
+    ExternalHoldoutSpec, evaluate_frozen_holdout, load_training_keys,
+    verify_training_source_ledger, write_evidence_once,
 )
 
 
@@ -26,6 +27,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--registry-root", type=Path, required=True,
                         help="Signed approved release registry root")
+    parser.add_argument("--original-training-corpus", type=Path, required=True,
+                        help="Exact pinned training-domain corpus; securely handled")
     parser.add_argument("--training-event-ids", type=Path, required=True,
                         help="Training corpus canonical IDs, one 32-hex ID per line")
     parser.add_argument("--training-event-ids-sha256", required=True)
@@ -43,6 +46,10 @@ def main(argv: list[str] | None = None) -> int:
         raise ValueError("Signed registry verified another model SHA256")
     training_keys = load_training_keys(
         args.training_event_ids, args.training_event_ids_sha256,
+    )
+    verify_training_source_ledger(
+        args.original_training_corpus, spec.training_sha256,
+        args.training_event_ids_sha256,
     )
     try:
         report = evaluate_frozen_holdout(

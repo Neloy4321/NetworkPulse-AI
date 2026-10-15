@@ -46,3 +46,20 @@ def test_export_training_id_ledger_refuses_duplicates(monkeypatch, tmp_path):
         model_dump=lambda **_: {"record": "metadata"}),
                                      SimpleNamespace(key=lambda: "1" * 32,
         model_dump=lambda **_: {"record": "metadata"})]))
+
+
+def test_original_training_corpus_must_reconstruct_exact_ledger(tmp_path):
+    import json
+    from networkpulse.generalization_evidence import verify_training_source_ledger
+    from networkpulse.simulator import sample_flows
+
+    source = tmp_path / "original.jsonl"
+    flows = sample_flows(count=120, seed=2026)
+    source.write_text("".join(json.dumps(event.model_dump(mode="json")) + "\n"
+                              for event in flows))
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    ledger = tmp_path / "ledger.tsv"
+    report = exporter.export_training_ledger(source, digest, ledger)
+    assert verify_training_source_ledger(source, digest, report["ledger_sha256"]) == 120
+    with pytest.raises(ValueError, match="do not match"):
+        verify_training_source_ledger(source, digest, "b" * 64)
