@@ -122,6 +122,22 @@ def test_non_retryable_error_with_partial_file_fails_promptly(tmp_path: Path):
     assert "403 forbidden" in report["unavailable_sources"][0]["error"].lower()
 
 
+def test_generic_retrieval_error_with_partial_file_fails_promptly(tmp_path: Path):
+    payload = b"x" * 1024
+    archive = _archive(tmp_path, "source.zip", payload)
+    state = {"attempt": 0}
+
+    def downloader(**kwargs):
+        state["attempt"] += 1
+        Path(kwargs["output"]).write_bytes(payload[:200])
+        raise RuntimeError("failed to retrieve file url")
+
+    ready, report = fetch_authorized_archives((archive,), downloader, attempts=3, sleep_fn=lambda *_: None)
+    assert ready is False
+    assert state["attempt"] == 1
+    assert "failed to retrieve file url" in report["unavailable_sources"][0]["error"].lower()
+
+
 def test_checksum_mismatch_rejected(tmp_path: Path):
     payload = b"correct-data"
     archive = _archive(tmp_path, "source.zip", payload)
@@ -172,7 +188,7 @@ def test_partial_file_without_explicit_quota_message_is_retried(tmp_path: Path):
     assert report["status"] == "ready"
 
 
-def test_workflow_contains_explicit_fail_closed_step():
+def test_workflow_fails_when_fetch_sources_not_ready():
     workflow = Path("/home/runner/work/NetworkPulse-AI/NetworkPulse-AI/.github/workflows/native-cross-dataset.yml")
     content = workflow.read_text(encoding="utf-8")
     assert "Fail when authorized source archives are unavailable" in content

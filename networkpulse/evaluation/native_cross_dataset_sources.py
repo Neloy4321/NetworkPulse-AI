@@ -58,6 +58,23 @@ def _is_non_retryable(message: str) -> bool:
     return any(marker in lowered for marker in NON_RETRYABLE_MARKERS)
 
 
+def _should_retry(
+    *,
+    combined_error: str,
+    partial: bool,
+    transient: bool,
+    non_retryable: bool,
+    verification_error: str | None,
+) -> bool:
+    if non_retryable:
+        return False
+    if transient:
+        return True
+    if combined_error:
+        return False
+    return partial or verification_error is not None
+
+
 def _verify(path: Path, expected_bytes: int, expected_sha256: str) -> str | None:
     size = path.stat().st_size
     if size != expected_bytes:
@@ -126,7 +143,13 @@ def fetch_authorized_archives(
             if combined_error:
                 last_error = combined_error
 
-            retryable = (partial or transient or verification_error is not None) and not non_retryable
+            retryable = _should_retry(
+                combined_error=combined_error,
+                partial=partial,
+                transient=transient,
+                non_retryable=non_retryable,
+                verification_error=verification_error,
+            )
             if not retryable:
                 unavailable.append({"file": archive.name, "error": last_error})
                 break
