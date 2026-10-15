@@ -72,3 +72,60 @@ Freeze an explicit *development-only* protocol before modeling:
   quality gate passed.
 
 **State:** P0 operational ML acceptance **NOT DEMONSTRATED**.
+
+
+## Executed authentic run: GitHub Actions 38783500339
+
+Research-only native job **completed successfully** on original SHA-pinned
+UNSW and TON ZIPs after its tests passed. [Run](https://github.com/Neloy4321/NetworkPulse-AI/actions/runs/38783500339),
+artifact `11995769965`, `native-unsw-to-ton.json`, extracted report
+SHA-256 `930dbe8c94bfeebd454c2d91a7a83681d0c69e48dba931b915e0e50a9e32054f`.
+
+**The original metrics remain unchanged and acceptance still FAILS:**
+TN 375, FP 105, FN 13, TP 4,507; observed FPR 21.875%,
+recall 99.7124%. The research job's successful execution is not a PASS.
+
+### Post-hoc false-alert slices (already-exposed TON labels)
+
+| Connection state | Benign | FP | Observed FPR | 95% Wilson FPR |
+|---|---:|---:|---:|---:|
+| `s0` | 104 | 70 | 67.3077% | 57.8163%–75.5660% |
+| `sh` | 90 | 22 | 24.4444% | 16.7328%–34.2484% |
+| `sf` | 258 | 3 | 1.1628% | 0.3962%–3.3623% |
+
+Other low-support state groups are suppressed, so these rows need not sum
+to all 480 benign and 105 FP. The `s0` slice explains *where* 70/105
+false alerts occur in this previously inspected capture; it does **not**
+demonstrate why the model generated them. No source/target state vocabulary
+harmonization has been independently validated; no state-specific thresholds
+were selected.
+
+| Protocol | Benign | FP | Observed FPR |
+|---|---:|---:|---:|
+| `tcp` | 225 | 33 | 14.6667% |
+| `udp` | 253 | 70 | 27.6680% |
+
+The benign numeric median comparison provides additional domain-shift
+hypotheses, not statistical significance or acceptance evidence:
+
+| Native numeric feature | Source benign median | TON benign median | Delta / source IQR |
+|---|---:|---:|---:|
+| `log_orig_bytes` | 7.677400 | 5.257495 | -1.2213 |
+| `log_resp_bytes` | 8.227643 | 4.713210 | -0.8046 |
+| `log_resp_pkts` | 2.944439 | 1.098612 | -0.7948 |
+| `log_bytes_per_second` | 11.338584 | 9.218484 | -0.6652 |
+| `log_orig_pkts` | 3.135494 | 1.791759 | -0.5692 |
+
+These rows use the authentic labels to *describe* the previously seen test
+distribution. **They must not be fed into training/calibration or used to
+choose a winning candidate claimed as independent on TON _23.** Group
+confidence bounds are flow-level, not cluster/site-robust.
+
+### Source-only next implementation decision
+
+Before any new candidate or FPR claim, pre-register sensor-state mapping
+semantics and duration/byte/packet units based on **data documentation and
+source-only fit/development observations**, independently of TON _23 label
+performance. Freeze an explicit versioned feature contract, candidate
+selection ledger and model SHA; only a newly acquired untouched authentic
+external network capture can establish out-of-sample acceptance.
