@@ -28,6 +28,8 @@ from sklearn.metrics import (
 from sklearn.neighbors import LocalOutlierFactor
 from sklearn.preprocessing import RobustScaler
 
+from networkpulse.evaluation.archive_members import resolve_csv_member
+
 SPECS = {
     "toniot": ("Network_dataset_1.csv", "Network_dataset_23.csv"),
     "unsw_raw": ("UNSW-NB15_1.csv", "UNSW-NB15_4.csv"),
@@ -117,8 +119,8 @@ def stream_sample(zf: zipfile.ZipFile, member: str, dataset: str,
     rng = random.Random(seed)
     records: list[dict] = []
     seen, rejected, counts = 0, 0, Counter()
-    info = zf.getinfo(member)
-    with zf.open(member) as f:
+    info = resolve_csv_member(zf, member.rsplit("/", 1)[-1])
+    with zf.open(info) as f:
         stream = io.TextIOWrapper(f, encoding="utf-8-sig", errors="replace", newline="")
         reader = (csv.DictReader(stream, fieldnames=UNSW_COLUMNS)
                   if dataset == "unsw_raw" else csv.DictReader(stream))
@@ -137,7 +139,7 @@ def stream_sample(zf: zipfile.ZipFile, member: str, dataset: str,
                 if pos < limit:
                     records[pos] = parsed
     return records, {
-        "file_name": member, "file_size_uncompressed": info.file_size,
+        "file_name": info.filename, "file_size_uncompressed": info.file_size,
         "zip_member_crc32": format(info.CRC, "08x"),
         "valid_rows_full_scan": seen, "invalid_rows_full_scan": rejected,
         "label_counts_full_scan": dict(counts),
