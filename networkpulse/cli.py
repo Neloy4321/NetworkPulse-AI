@@ -13,7 +13,7 @@ import httpx
 
 from networkpulse.adapters import iter_jsonl
 from networkpulse.config import Settings
-from networkpulse.detector import Detector, train
+from networkpulse.detector import train
 from networkpulse.service import ingest
 from networkpulse.simulator import sample_flows
 from networkpulse.storage import build_sessions
