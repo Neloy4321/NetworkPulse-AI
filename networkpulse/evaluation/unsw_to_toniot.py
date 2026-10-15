@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from sklearn.metrics import average_precision_score, roc_auc_score
 from networkpulse.detector import Detector, train
+from networkpulse.evaluation.archive_members import resolve_csv_member
 from networkpulse.evaluation.live_unsw import read_reservoir
 from networkpulse.generalization_evidence import normalized_flow_fingerprint, wilson_interval
 from networkpulse.schemas import FlowEvent
@@ -63,11 +64,17 @@ def ton_sample(archive, cap=5000, seed=43):
         raise ValueError("Sample cap must be 1000..50000")
     sample, counts, rejected, valid = [], Counter(), 0, 0
     randomizer = random.Random(seed)
-    with archive.open("Network_dataset_23.csv") as stream:
+    with archive.open(resolve_csv_member(archive, "Network_dataset_23.csv")) as stream:
         reader = csv.DictReader(io.TextIOWrapper(stream,encoding="utf-8-sig",newline=""))
-        if not REQUIRED.issubset({str(k).strip().lower() for k in reader.fieldnames or ()}):
+        normalized_header = [str(k).strip().lower() for k in reader.fieldnames or ()]
+        if len(normalized_header) != len(set(normalized_header)):
+            raise ValueError("TON has ambiguous duplicate source headers")
+        if not REQUIRED.issubset(normalized_header):
             raise ValueError("TON dataset lacks authentic native flow fields")
         for row in reader:
+            if None in row or any(value is None for value in row.values()):
+                rejected += 1
+                continue
             try:
                 event = to_native(row)
             except (ValueError,TypeError,OverflowError,KeyError):
