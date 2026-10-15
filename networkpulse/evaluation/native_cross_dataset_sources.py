@@ -113,6 +113,13 @@ def fetch_authorized_archives(
     retry_sleep_seconds: int = 20,
     sleep_fn: Callable[[float], None] = time.sleep,
 ) -> tuple[bool, dict]:
+    if attempts < 1:
+        raise ValueError("attempts must be at least 1; source verification cannot be skipped")
+    if retry_sleep_seconds < 0:
+        raise ValueError("retry_sleep_seconds cannot be negative")
+    if not archives:
+        raise ValueError("at least one authorized archive is required")
+
     unavailable: list[dict] = []
     for archive in archives:
         last_error = "unknown failure"
