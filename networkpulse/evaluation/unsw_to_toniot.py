@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from sklearn.metrics import average_precision_score, roc_auc_score
 from networkpulse.detector import Detector, train
-from networkpulse.evaluation.archive_members import resolve_csv_member
+from networkpulse.evaluation.archive_members import archive_tree_summary, resolve_csv_member
 from networkpulse.evaluation.live_unsw import read_reservoir
 from networkpulse.generalization_evidence import normalized_flow_fingerprint, wilson_interval
 from networkpulse.schemas import FlowEvent
@@ -156,11 +156,13 @@ def run(unsw_path,ton_path):
     if digest(unsw_path)!=UNSW_SHA or digest(ton_path)!=TON_SHA:
         raise ValueError("Real source bytes changed from approved checksums")
     with zipfile.ZipFile(unsw_path) as zf:
+        unsw_tree = archive_tree_summary(zf)
         train_sample,train_info=read_reservoir(zf,"UNSW-NB15_1.csv",2200,42)
     training,removed_train=unique(train_sample)
     if len(training)<1000:
         raise ValueError("Insufficient UNSW fit population")
     with zipfile.ZipFile(ton_path) as zf:
+        ton_tree = archive_tree_summary(zf)
         external_sample,external_info=ton_sample(zf)
     test,removed_test=unique(external_sample,
         {e.key() for e in training},
@@ -181,6 +183,7 @@ def run(unsw_path,ton_path):
         "original_signed_production_model_tested":False,"production_certified":False,
         "train_dataset":"UNSW-NB15 raw 2015","test_dataset":"TON-IoT 2019",
         "training_zip_sha256":UNSW_SHA,"test_zip_sha256":TON_SHA,
+        "training_zip_tree":unsw_tree,"test_zip_tree":ton_tree,
         "train_member":"UNSW-NB15_1.csv","test_member":"Network_dataset_23.csv",
         "native_detector_actual_score_code":True,
         "frozen_research_model_sha256":model_sha,
