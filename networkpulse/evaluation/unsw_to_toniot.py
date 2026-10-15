@@ -15,6 +15,7 @@ from pathlib import Path
 from sklearn.metrics import average_precision_score, roc_auc_score
 from networkpulse.detector import Detector, train
 from networkpulse.evaluation.archive_members import archive_tree_summary, resolve_csv_member
+from networkpulse.evaluation.domain_shift_diagnostics import alert_slices, feature_shift
 from networkpulse.evaluation.live_unsw import read_reservoir
 from networkpulse.generalization_evidence import normalized_flow_fingerprint, wilson_interval
 from networkpulse.schemas import FlowEvent
@@ -175,7 +176,12 @@ def run(unsw_path,ton_path):
         model.save(path)
         model_sha=digest(path)
         frozen=Detector.load(path)  # Only locally created trusted file, not uploads.
-        result=metrics(test,frozen.score(test))
+        predictions=frozen.score(test)
+        result=metrics(test,predictions)
+        diagnostics={
+            "feature_shift":feature_shift(training,test),
+            "alert_slices":alert_slices(test,predictions),
+        }
         if digest(path)!=model_sha:
             raise ValueError("Frozen model mutated during evaluation")
     return {
@@ -196,6 +202,7 @@ def run(unsw_path,ton_path):
         "train_duplicates_excluded":removed_train,
         "test_duplicates_excluded":removed_test,
         "evaluation":result,
+        "posthoc_diagnostics":diagnostics,
         "limitations":[
             "Frozen newly trained UNSW research model, not the signed active deployed model.",
             "Published independent dataset families are NOT audited independent physical sites.",
@@ -203,6 +210,7 @@ def run(unsw_path,ton_path):
             "Uniform reservoir plus dedup may change prevalence; flow-level confidence intervals ignore clustering.",
             "One TON file does not prove replicated capture-day reliability; no real-site alert-hour measurement.",
             "Metric gate failure is retained, not used for external label-guided model optimization.",
+            "Post-hoc target feature/slice diagnostics are descriptive and cannot select a new model or threshold.",
         ]}
 
 def main(argv=None):
