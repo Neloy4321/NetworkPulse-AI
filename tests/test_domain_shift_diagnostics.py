@@ -49,7 +49,7 @@ def test_slice_counts_and_small_state_suppressed():
 
 
 def test_refuse_incomplete_or_invalid_predictions():
-    flows = [x.model_copy(update={"label": "benign"}) for x in sample_flows(40)]
+    flows = [x.model_copy(update={"label": "benign"}) for x in sample_flows(100)[:40]]
     with pytest.raises(ValueError, match="every target"):
         alert_slices(flows, [])
     with pytest.raises(ValueError, match="Invalid native"):
