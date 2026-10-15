@@ -9,6 +9,7 @@ import argparse
 import json
 import os
 import secrets
+import socket
 import stat
 import subprocess
 import time
@@ -122,18 +123,27 @@ class DisposableLab:
         if image not in {"postgres:16-alpine", "redis:7-alpine"}:
             raise ValueError("Unapproved lab image")
         name = f"networkpulse-failover-{self.run_id}-{service}"
+        # Docker's ephemeral host-port mapping may change after docker start.
+        # Reserve a random local port and publish it explicitly for the
+        # container's entire stopped/restarted lifetime.
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.bind(("127.0.0.1", 0))
+            host_port = probe.getsockname()[1]
         output = _docker(
             "run", "-d", "--name", name,
             "--label", f"{LABEL_OWNER}=true",
             "--label", f"{LABEL_RUN}={self.run_id}",
-            "-p", f"127.0.0.1::{port}",
+            "-p", f"127.0.0.1:{host_port}:{port}",
             *extra_args, image, *command, timeout=75,
         )
         if len(output) != 64 or any(c not in "0123456789abcdef" for c in output):
             raise RuntimeError("Docker did not return an expected container ID")
         owned = OwnedContainer(output, name, self.run_id, image)
         self.owned.append(owned)
-        return owned, _published_loopback_port(owned, port)
+        verified_port = _published_loopback_port(owned, port)
+        if verified_port != host_port:
+            raise RuntimeError("Unexpected disposable Docker port mapping")
+        return owned, verified_port
 
     def kill(self, container: OwnedContainer) -> None:
         verified_owned(container)
@@ -254,6 +264,8 @@ def execute_isolated_restart_drill(lab: DisposableLab) -> dict:
             raise RuntimeError("Real PostgreSQL outage failed to retain pending flows")
         pg_restart_start = time.monotonic()
         lab.restart(pg)
+        if _published_loopback_port(pg, 5432) != pg_port:
+            raise RuntimeError("PostgreSQL restart moved the pinned local port")
         pg_ready_seconds = _wait_ready(sql_ready, phase="postgres_after_sigkill")
         pg_restart_total = round(time.monotonic() - pg_restart_start, 3)
         maker.kw["bind"].dispose()
@@ -277,6 +289,8 @@ def execute_isolated_restart_drill(lab: DisposableLab) -> dict:
             raise RuntimeError("Redis was reachable after forced SIGKILL")
         redis_restart_start = time.monotonic()
         lab.restart(rd)
+        if _published_loopback_port(rd, 6379) != rd_port:
+            raise RuntimeError("Redis restart moved the pinned local port")
         redis_ready_seconds = _wait_ready(client.ping, phase="redis_after_sigkill")
         redis_restart_total = round(time.monotonic() - redis_restart_start, 3)
         if (client.xlen(stream) != saved_stream_depth
