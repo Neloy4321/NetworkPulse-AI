@@ -52,3 +52,26 @@ def resolve_csv_member(archive: zipfile.ZipFile, basename: str) -> zipfile.ZipIn
     if len(matches) != 1:
         raise ValueError("Ambiguous CSV basename across ZIP subfolders: " + basename)
     return matches[0]
+
+
+def archive_tree_summary(archive: zipfile.ZipFile) -> dict:
+    """Metadata only: all subfolder paths, sizes and CRCs; no traffic rows."""
+    entries = []
+    for item in archive.infolist():
+        entries.append({
+            "path": item.filename,
+            "directory": item.is_dir(),
+            "uncompressed_bytes": item.file_size,
+            "compressed_bytes": item.compress_size,
+            "crc32": format(item.CRC, "08x"),
+        })
+    return {
+        "entry_count": len(entries),
+        "file_count": sum(not entry["directory"] for entry in entries),
+        "embedded_zip_members": [
+            entry["path"] for entry in entries
+            if not entry["directory"] and entry["path"].lower().endswith(".zip")
+        ],
+        "entries": entries,
+        "privacy": "ZIP metadata only; not labels, site proof or raw flows",
+    }
