@@ -96,7 +96,7 @@ def _published_loopback_port(container: OwnedContainer, service_port: int) -> in
     raise RuntimeError("Expected local-only ephemeral Docker port not found")
 
 
-def _wait_ready(check, *, timeout_seconds: float = 45) -> float:
+def _wait_ready(check, *, phase: str, timeout_seconds: float = 45) -> float:
     started = time.monotonic()
     while time.monotonic() - started < timeout_seconds:
         try:
@@ -105,7 +105,7 @@ def _wait_ready(check, *, timeout_seconds: float = 45) -> float:
         except Exception:
             pass
         time.sleep(.2)
-    raise TimeoutError("Disposable service failed to return to readiness")
+    raise TimeoutError("Disposable service failed to return to readiness: " + phase)
 
 
 class DisposableLab:
@@ -191,8 +191,8 @@ def execute_isolated_restart_drill(lab: DisposableLab) -> dict:
         def sql_ready():
             with engine.connect():
                 return True
-        _wait_ready(sql_ready)
-        _wait_ready(client.ping)
+        _wait_ready(sql_ready, phase="postgres_initial")
+        _wait_ready(client.ping, phase="redis_initial")
         upgrade_database(db_url)
         maker = build_sessions(db_url)
         model = train(sample_flows(320, seed=7711), seed=7711)
@@ -254,7 +254,7 @@ def execute_isolated_restart_drill(lab: DisposableLab) -> dict:
             raise RuntimeError("Real PostgreSQL outage failed to retain pending flows")
         pg_restart_start = time.monotonic()
         lab.restart(pg)
-        pg_ready_seconds = _wait_ready(sql_ready)
+        pg_ready_seconds = _wait_ready(sql_ready, phase="postgres_after_sigkill")
         pg_restart_total = round(time.monotonic() - pg_restart_start, 3)
         maker.kw["bind"].dispose()
         drain("after-postgres-restart", 60)
@@ -277,7 +277,7 @@ def execute_isolated_restart_drill(lab: DisposableLab) -> dict:
             raise RuntimeError("Redis was reachable after forced SIGKILL")
         redis_restart_start = time.monotonic()
         lab.restart(rd)
-        redis_ready_seconds = _wait_ready(client.ping)
+        redis_ready_seconds = _wait_ready(client.ping, phase="redis_after_sigkill")
         redis_restart_total = round(time.monotonic() - redis_restart_start, 3)
         if (client.xlen(stream) != saved_stream_depth
                 or client.xpending(stream, queue.group)["pending"] != 20):
@@ -365,6 +365,9 @@ def main(argv: list[str] | None = None) -> int:
     else:
         result["cleanup_status"] = "verified_owned_containers_removed"
     write_report(args.report, result)
+    print(json.dumps({"status": result["status"],
+                      "safe_failure": result.get("safe_failure"),
+                      "cleanup_status": result["cleanup_status"]}), flush=True)
     return 0 if result["status"] == "passed" else 2
 
 
