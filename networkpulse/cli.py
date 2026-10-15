@@ -124,6 +124,26 @@ def main(argv: list[str] | None = None) -> int:
     enrich.add_argument("--output", type=Path, default=Path("reports/offline-enrichment.json"))
     enrich.add_argument("--max-events", type=int, default=5000)
 
+    staging = cmd.add_parser(
+        "staging-load", help="Safety-gated sustained load and failure recovery in isolated staging"
+    )
+    staging.add_argument("--source", type=Path, required=True)
+    staging.add_argument("--format", choices=["canonical", "zeek", "suricata"], required=True)
+    staging.add_argument("--source-sha256", required=True,
+                         help="Approved exact SHA256 of the unchanged authorized sensor corpus")
+    staging.add_argument("--expected-database", required=True,
+                         help="Exact staging PostgreSQL database name ending _staging or _ci")
+    staging.add_argument("--confirm-isolated-staging", action="store_true",
+                         help="Explicit authorization of the disposable staging database and Redis /1+")
+    staging.add_argument("--report", type=Path, required=True,
+                         help="NEW immutable JSON evidence file; existing files are never overwritten")
+    staging.add_argument("--rate", type=int, default=20, help="New unique flows per second")
+    staging.add_argument("--duration-seconds", type=int, default=60)
+    staging.add_argument("--drain-timeout-seconds", type=int, default=120)
+    staging.add_argument("--max-events", type=int, default=25000)
+    staging.add_argument("--max-p99-seconds", type=float, default=120)
+    staging.add_argument("--min-throughput", type=float, default=1.0)
+
     collect = cmd.add_parser("collect", help="Tail a Zeek/Suricata JSONL file to Redis Streams")
     collect.add_argument("--path", type=Path, required=True)
     collect.add_argument("--format", choices=["zeek", "suricata", "canonical"], required=True)
@@ -438,6 +458,91 @@ def main(argv: list[str] | None = None) -> int:
             queue.redis.close()
         print(json.dumps(result, indent=2))
         return 0
+
+    if args.command == "staging-load":
+        from networkpulse.deployment_preflight import verify_deployment_model
+        from networkpulse.model_registry import sha256
+        from networkpulse.staging_load import (
+            StagingPlan, authorize_staging_target, load_source,
+            run_staging_load, write_report,
+        )
+        from networkpulse.streaming.redis_streams import connect
+        import uuid
+
+        # Validate limits before network, disk or model access. No model data
+        # unpickling before independent signed release preflight.
+        plan = StagingPlan(
+            rate=args.rate, duration_seconds=args.duration_seconds,
+            drain_timeout_seconds=args.drain_timeout_seconds,
+            max_events=args.max_events,
+            max_p99_queue_seconds=args.max_p99_seconds,
+            min_verified_throughput=args.min_throughput,
+        )
+        if not args.confirm_isolated_staging:
+            parser.error("staging-load requires --confirm-isolated-staging")
+        if args.report.exists():
+            parser.error("Evidence file already exists; choose a fresh report path")
+        settings = Settings.from_env()
+        root = os.getenv("NETWORKPULSE_MODEL_REGISTRY_ROOT", "").strip()
+        if not root or not settings.model_sha256:
+            parser.error("Staging load requires signed registry root and MODEL_SHA256 pin")
+        verified = verify_deployment_model(
+            model_path=settings.model_path, expected_sha256=settings.model_sha256,
+            registry_root=Path(root),
+        )
+        detector = Detector.load(settings.model_path)
+        if "synthetic" in str(detector.metadata.get("source", "")).lower():
+            parser.error("Production staging evidence refuses synthetic/demo model")
+        if sha256(settings.model_path) != settings.model_sha256.lower():
+            parser.error("Model SHA256 differs from operator release pin")
+        events, corpus_digest = load_source(
+            args.source, args.format, args.source_sha256, plan.target_count,
+        )
+        maker = build_sessions(settings.database_url)
+        client = None
+        run_id = uuid.uuid4().hex
+        started_utc = __import__("datetime").datetime.now(
+            __import__("datetime").timezone.utc
+        ).isoformat()
+        try:
+            client = connect(os.getenv("REDIS_URL", "redis://localhost:6379/0"))
+            authorize_staging_target(
+                maker=maker, redis_client=client,
+                expected_database=args.expected_database,
+                confirmed=args.confirm_isolated_staging,
+            )
+            try:
+                result = run_staging_load(
+                    events=events, client=client, maker=maker,
+                    model=detector, plan=plan, run_id=run_id,
+                )
+                result.update({
+                    "source_sha256": corpus_digest,
+                    "model_sha256": verified["sha256"],
+                    "model_release_scope": verified["scope"],
+                    "expected_staging_database": args.expected_database,
+                    "started_at_utc": started_utc,
+                })
+            except Exception as exc:
+                # No secrets, source IPs, raw SQL or file records in evidence.
+                result = {
+                    "schema_version": 1, "run_id": run_id,
+                    "stream": "networkpulse:staging:" + run_id,
+                    "status": "failed", "failure_class": type(exc).__name__,
+                    "scope": "isolated_staging_real_redis_postgresql",
+                    "source_sha256": corpus_digest,
+                    "model_sha256": verified["sha256"],
+                    "expected_staging_database": args.expected_database,
+                    "started_at_utc": started_utc,
+                    "note": "Preserve Redis stream and staging database for operator reconciliation",
+                }
+            write_report(args.report, result)
+            print(json.dumps(result, indent=2))
+            return 0 if result["status"] == "passed" else 2
+        finally:
+            if client is not None:
+                client.close()
+            maker.kw["bind"].dispose()
 
     if args.command in {"collect", "worker"}:
         from networkpulse.streaming.redis_streams import FlowStream, connect, process_events
