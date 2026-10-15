@@ -183,7 +183,7 @@ def run_staging_load(*, events: list[FlowEvent], client, maker, model,
             if time.monotonic() > deadline:
                 raise TimeoutError("Staging drain deadline exceeded")
             def transaction(batch):
-                nonlocal inject
+                nonlocal inject, inserted_rows
                 if inject:
                     inject = False
                     raise ConnectionError("One-time controlled pre-commit fault")
