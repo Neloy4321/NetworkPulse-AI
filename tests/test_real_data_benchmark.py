@@ -39,7 +39,7 @@ def test_unsw_raw_and_cic_units_validation():
         _float("Infinity", "counter")
 
 
-def fixture(path, *, overlap=False):
+def fixture(path, *, overlap=False, nested=False):
     names = ("ts", "src_ip", "dst_ip", "dst_port", "proto", "duration",
              "src_bytes", "dst_bytes", "src_pkts", "dst_pkts",
              "conn_state", "label", "type")
@@ -65,7 +65,19 @@ def fixture(path, *, overlap=False):
                     "conn_state": "SF", "label": str(int(abnormal)),
                     "type": "scan" if abnormal else "normal",
                 })
-            archive.writestr(name, buffer.getvalue())
+            archive.writestr(f"nested/{name}" if nested else name, buffer.getvalue())
+
+
+def test_archive_nested_csvs_still_use_expected_capture_files(tmp_path):
+    path = tmp_path / "nested.zip"
+    fixture(path, nested=True)
+    result = evaluate(path, "toniot", max_train=700, max_test=420)
+    assert result["source_files"]["train"]["file_name"] == (
+        "nested/Network_dataset_1.csv"
+    )
+    assert result["source_files"]["test"]["file_name"] == (
+        "nested/Network_dataset_23.csv"
+    )
 
 
 def test_external_holdout_protocol_and_time_overlap_rejection(tmp_path):
