@@ -1,6 +1,14 @@
 """Native UNSW -> TON-IoT domain shift experiment; NOT production certification."""
 from __future__ import annotations
-import argparse, csv, hashlib, io, json, math, random, tempfile, zipfile
+import argparse
+import csv
+import hashlib
+import io
+import json
+import math
+import random
+import tempfile
+import zipfile
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -67,10 +75,12 @@ def ton_sample(archive, cap=5000, seed=43):
                 continue
             valid += 1
             counts[event.label] += 1
-            if len(sample) < cap: sample.append(event)
+            if len(sample) < cap:
+                sample.append(event)
             else:
                 position = randomizer.randrange(valid)
-                if position < cap: sample[position] = event
+                if position < cap:
+                    sample[position] = event
     if valid < cap or rejected > max(10,(valid+rejected)//5):
         raise ValueError("Insufficient valid source rows for credible evaluation")
     return sample, {"full_scan_valid":valid,"full_scan_invalid":rejected,
@@ -85,7 +95,9 @@ def unique(items, training_ids=frozenset(), training_flow_hashes=frozenset()):
         if key in seen_ids or flow in seen_flows:
             excluded += 1
             continue
-        seen_ids.add(key);seen_flows.add(flow);kept.append(event)
+        seen_ids.add(key)
+        seen_flows.add(flow)
+        kept.append(event)
     return kept, excluded
 
 def metrics(events, detections):
@@ -99,13 +111,18 @@ def metrics(events, detections):
             raise ValueError("Invalid model score")
         actual = event.label=="anomaly"
         cell = ("tp" if decision.anomalous else "fn") if actual else ("fp" if decision.anomalous else "tn")
-        cm[cell]+=1;daily[event.timestamp.date().isoformat()][cell]+=1
-        labels.append(int(actual));scores.append(float(decision.anomaly_score))
+        cm[cell]+=1
+        daily[event.timestamp.date().isoformat()][cell]+=1
+        labels.append(int(actual))
+        scores.append(float(decision.anomaly_score))
     benign, attack = cm["tn"]+cm["fp"],cm["tp"]+cm["fn"]
     if benign<100 or attack<100:
         raise ValueError("External result lacks >=100 records per class")
-    p=cm["tp"]/max(1,cm["tp"]+cm["fp"]);r=cm["tp"]/attack;f=cm["fp"]/benign
-    fci=wilson_interval(cm["fp"],benign);rci=wilson_interval(cm["tp"],attack)
+    p=cm["tp"]/max(1,cm["tp"]+cm["fp"])
+    r=cm["tp"]/attack
+    f=cm["fp"]/benign
+    fci=wilson_interval(cm["fp"],benign)
+    rci=wilson_interval(cm["tp"],attack)
     return {
         "confusion_matrix":dict(cm),"benign":benign,"attack":attack,
         "precision":round(p,6),"recall":round(r,6),
@@ -134,7 +151,8 @@ def run(unsw_path,ton_path):
     with zipfile.ZipFile(unsw_path) as zf:
         train_sample,train_info=read_reservoir(zf,"UNSW-NB15_1.csv",2200,42)
     training,removed_train=unique(train_sample)
-    if len(training)<1000: raise ValueError("Insufficient UNSW fit population")
+    if len(training)<1000:
+        raise ValueError("Insufficient UNSW fit population")
     with zipfile.ZipFile(ton_path) as zf:
         external_sample,external_info=ton_sample(zf)
     test,removed_test=unique(external_sample,
@@ -145,10 +163,12 @@ def run(unsw_path,ton_path):
     model=train(training,quantile=.995,seed=42,source="UNSW_real_research_cross_dataset")
     with tempfile.TemporaryDirectory() as directory:
         path=Path(directory)/"research-only.joblib"
-        model.save(path);model_sha=digest(path)
+        model.save(path)
+        model_sha=digest(path)
         frozen=Detector.load(path)  # Only locally created trusted file, not uploads.
         result=metrics(test,frozen.score(test))
-        if digest(path)!=model_sha: raise ValueError("Frozen model mutated during evaluation")
+        if digest(path)!=model_sha:
+            raise ValueError("Frozen model mutated during evaluation")
     return {
         "schema_version":1,"status":"research_cross_dataset_measurement_completed",
         "original_signed_production_model_tested":False,"production_certified":False,
@@ -181,11 +201,13 @@ def main(argv=None):
     parser.add_argument("--ton-zip",type=Path,required=True)
     parser.add_argument("--output",type=Path,required=True)
     args=parser.parse_args(argv)
-    if args.output.exists(): parser.error("Refuse to overwrite existing real evidence")
+    if args.output.exists():
+        parser.error("Refuse to overwrite existing real evidence")
     report=run(args.unsw_zip,args.ton_zip)
     args.output.parent.mkdir(parents=True,exist_ok=True)
     with args.output.open("x",encoding="utf-8") as f:
-        json.dump(report,f,indent=2,sort_keys=True,allow_nan=False);f.write("\n")
+        json.dump(report,f,indent=2,sort_keys=True,allow_nan=False)
+        f.write("\n")
     print(json.dumps({"status":report["status"],"model":report["frozen_research_model_sha256"],
         "test_unique":report["test_unique"],"metrics":report["evaluation"]},sort_keys=True))
     return 0
