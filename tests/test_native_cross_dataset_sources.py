@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
+import pytest
+
 from networkpulse.evaluation.native_cross_dataset_sources import (
     AuthorizedArchive,
     fetch_authorized_archives,
@@ -189,8 +191,33 @@ def test_partial_file_without_explicit_quota_message_is_retried(tmp_path: Path):
 
 
 def test_workflow_fails_when_fetch_sources_not_ready():
-    workflow = Path("/home/runner/work/NetworkPulse-AI/NetworkPulse-AI/.github/workflows/native-cross-dataset.yml")
+    workflow = Path(__file__).resolve().parents[1] / ".github/workflows/native-cross-dataset.yml"
     content = workflow.read_text(encoding="utf-8")
     assert "Fail when authorized source archives are unavailable" in content
     assert "steps.fetch-sources.outputs.ready != 'true'" in content
     assert "exit 1" in content
+
+
+def test_refuse_zero_attempts_without_marking_archives_ready(tmp_path: Path):
+    payload = b"real-data"
+    archive = _archive(tmp_path, "source.zip", payload)
+    calls = []
+
+    def downloader(**kwargs):
+        calls.append(kwargs)
+        return None
+
+    with pytest.raises(ValueError, match="attempts must be at least 1"):
+        fetch_authorized_archives((archive,), downloader, attempts=0)
+    assert calls == []
+
+
+def test_refuse_empty_authorized_archive_set():
+    with pytest.raises(ValueError, match="at least one authorized archive"):
+        fetch_authorized_archives((), lambda **_: None)
+
+
+def test_refuse_negative_retry_delay(tmp_path: Path):
+    archive = _archive(tmp_path, "source.zip", b"real-data")
+    with pytest.raises(ValueError, match="retry_sleep_seconds cannot be negative"):
+        fetch_authorized_archives((archive,), lambda **_: None, retry_sleep_seconds=-1)
