@@ -1,0 +1,62 @@
+name: Native UNSW to TON independent dataset ML evidence
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/native-cross-dataset.yml'
+      - 'networkpulse/evaluation/unsw_to_toniot.py'
+      - 'tests/test_unsw_to_toniot.py'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/native-cross-dataset.yml'
+      - 'networkpulse/evaluation/unsw_to_toniot.py'
+      - 'tests/test_unsw_to_toniot.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-cross-dataset:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install native runtime and authorized downloader
+        run: python -m pip install -e '.[dev]' 'gdown>=5.2,<6'
+      - name: Unit-test security and native adapter
+        run: python -m pytest -q tests/test_unsw_to_toniot.py
+      - name: Download two authorized real source archives
+        run: |
+          python - <<'PY'
+          import gdown
+          from pathlib import Path
+          for file, fileid, size in (
+              ("unsw-source.zip", "16eIgENKYpiLwJNHZWRrYdPfGj6AOOtkT", 586382286),
+              ("ton-source.zip", "1rkNwQzrkpcnmtM8G5a-O7dAtr-y_9wFy", 3372478580),
+          ):
+              path=Path(file)
+              if not gdown.download(id=fileid,output=str(path),quiet=True,fuzzy=True):
+                  raise RuntimeError("Authorized source ZIP unavailable; no claim")
+              if path.stat().st_size != size:
+                  raise RuntimeError("Source size mismatch; no evaluation claim")
+          PY
+      - name: Freeze source-only trained native Detector and evaluate TON holdout
+        run: |
+          python -m networkpulse.evaluation.unsw_to_toniot \
+            --unsw-zip unsw-source.zip --ton-zip ton-source.zip \
+            --output real-evidence/native-unsw-to-ton.json
+      - name: Preserve aggregate-only report even when operational gate fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-independent-dataset-native-evidence
+          path: real-evidence/native-unsw-to-ton.json
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Remove raw network archives
+        if: always()
+        run: rm -f unsw-source.zip ton-source.zip
