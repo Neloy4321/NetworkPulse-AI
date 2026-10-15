@@ -233,8 +233,14 @@ def run_staging_load(*, events: list[FlowEvent], client, maker, model,
                         future.result()
                         raise RuntimeError("Worker stopped before publisher completed")
                     schedule = start + index / plan.rate
-                    while time.monotonic() < schedule:
-                        time.sleep(min(0.01, schedule - time.monotonic()))
+                    # Read the monotonic clock only once per iteration:
+                    # a second read can cross the deadline and otherwise
+                    # pass a negative duration into sleep() under load.
+                    while True:
+                        remaining = schedule - time.monotonic()
+                        if remaining <= 0:
+                            break
+                        time.sleep(min(0.01, remaining))
                     while True:
                         if time.monotonic() > deadline:
                             raise TimeoutError("Staging publisher exceeded deadline")
