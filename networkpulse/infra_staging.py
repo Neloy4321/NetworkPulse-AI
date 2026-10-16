@@ -8,6 +8,7 @@ PostgreSQL and Redis identities; mocked CI can verify security *code* only.
 from __future__ import annotations
 
 import os
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
@@ -129,14 +130,17 @@ def create_app(
     up.labels(dependency="postgres").set(0)
     up.labels(dependency="redis").set(0)
 
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        try:
+            yield
+        finally:
+            checks.close()
+
     app = FastAPI(
         title="NetworkPulse NON-ML staging infrastructure",
-        docs_url=None, redoc_url=None, openapi_url=None,
+        docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan,
     )
-
-    @app.on_event("shutdown")
-    def close_connections() -> None:
-        checks.close()
 
     @app.middleware("http")
     async def no_cache_and_security_headers(request, call_next):
