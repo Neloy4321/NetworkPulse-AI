@@ -25,7 +25,7 @@ jobs:
         run: docker build --file deploy/Dockerfile.signed-v2 --tag networkpulse-v2:unsigned-build-test .
       - name: Verify image never invents a production approval
         run: |
-          docker run --rm --network none networkpulse-v2:unsigned-build-test python - <<'PY'
+          docker run --rm --network none -i networkpulse-v2:unsigned-build-test python - <<'PY'
           from networkpulse.v2_signed_api import create_production_v2_app
           try:
               create_production_v2_app()
