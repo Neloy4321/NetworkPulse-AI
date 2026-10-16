@@ -143,7 +143,9 @@ def test_source_only_grouped_split_is_seeded_and_host_pair_disjoint():
     assert groups >= 200
     assert [e.key() for e in fit] == [e.key() for e in fit2]
     assert [e.key() for e in dev] == [e.key() for e in dev2]
-    keys = lambda items: {(str(e.src_ip), str(e.dst_ip), e.proto) for e in items}
+    def keys(items):
+        return {(str(e.src_ip), str(e.dst_ip), e.proto) for e in items}
+
     assert keys(fit).isdisjoint(keys(dev))
 
 
