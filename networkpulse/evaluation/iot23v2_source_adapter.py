@@ -15,6 +15,7 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import re
 from collections import Counter
 from datetime import datetime, timezone
@@ -112,6 +113,8 @@ def inspect_and_convert(source: Path, output: Path, report: Path) -> dict:
     """
     if output.exists() or report.exists():
         raise ValueError("refusing overwrite of immutable external-data evidence")
+    if len({source.resolve(), output.resolve(), report.resolve()}) != 3:
+        raise ValueError("source, canonical output and report must be separate files")
     if not source.is_file():
         raise ValueError("source log not present")
     if source.stat().st_size > 128 * 1024 * 1024:
@@ -124,7 +127,8 @@ def inspect_and_convert(source: Path, output: Path, report: Path) -> dict:
         raise ValueError("leftover private partial output")
     output.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with source.open("rb") as stream, temp.open("x", encoding="utf-8") as dest:
+        descriptor = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with source.open("rb") as stream, os.fdopen(descriptor, "w", encoding="utf-8") as dest:
             fields_seen = False
             for lineno, raw_bytes in enumerate(stream, 1):
                 digest.update(raw_bytes)
@@ -157,6 +161,8 @@ def inspect_and_convert(source: Path, output: Path, report: Path) -> dict:
                 dest.write(event.model_dump_json() + "\n")
         if not fields_seen:
             raise ValueError("no strict Zeek #fields schema found")
+        if hashlib.sha256(source.read_bytes()).hexdigest() != digest.hexdigest():
+            raise ValueError("source input changed while converting")
         if written["benign"] < MIN_BENIGN or written["anomaly"] < MIN_ATTACK:
             raise ValueError("natural source class coverage insufficient")
         total = scanned["valid"] + scanned["missing_native_features"]
