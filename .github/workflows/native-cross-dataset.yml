@@ -76,6 +76,24 @@ jobs:
       - name: Remove raw network archives
         if: always()
         run: rm -f unsw-source.zip ton-source.zip
+      - name: Fail if predeclared research numerical gate fails
+        if: always() && steps.fetch-sources.outputs.ready == 'true'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("real-evidence/native-unsw-to-ton.json")
+          if not path.is_file():
+              raise SystemExit("Research evaluation evidence is missing; failing closed")
+          evidence = json.loads(path.read_text(encoding="utf-8"))
+          gate = evidence.get("evaluation", {}).get("operational_gate", {})
+          status = gate.get("status", "missing")
+          print(f"Research cross-dataset numeric gate: {status}")
+          print("Numeric metrics do not prove independent-site or production acceptance.")
+          if status != "passed":
+              raise SystemExit("Predeclared numeric quality gate FAILED")
+          PY
       - name: Fail when authorized source archives are unavailable
         if: always() && steps.fetch-sources.outputs.ready != 'true'
         run: |
