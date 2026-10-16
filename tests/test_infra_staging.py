@@ -95,7 +95,7 @@ def test_unavailable_or_failed_service_is_not_healthy(dependency):
         assert api.get("/health/live").status_code == 200
         metric = api.get("/internal/metrics")
         assert metric.status_code == 200
-        assert f'dependency="{dependency}"} 0.0' in metric.text
+        assert ('dependency="' + dependency + '"} 0.0') in metric.text
 
 
 def test_internal_dependency_exception_is_redacted():
