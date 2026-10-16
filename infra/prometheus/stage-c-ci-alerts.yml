@@ -1,0 +1,21 @@
+# Intentional synthetic fault injection, not live thresholds or paging.
+groups:
+  - name: networkpulse.stage-c.synthetic-disposable-ci
+    interval: 1s
+    rules:
+      - alert: NetworkPulseCISyntheticDependencyFailure
+        expr: networkpulse_ci_synthetic_dependency_up{scope="disposable-stage-c-ci"} == 0
+        for: 1s
+        labels:
+          severity: warning
+          environment: ephemeral-ci
+        annotations:
+          summary: "Synthetic CI dependency unavailable, not a live incident"
+      - alert: NetworkPulseCISyntheticMutedProbe
+        expr: networkpulse_ci_synthetic_muted_probe{scope="disposable-stage-c-ci"} == 1
+        for: 1s
+        labels:
+          severity: info
+          environment: ephemeral-ci
+        annotations:
+          summary: "Synthetic CI silence control, not a live incident"
