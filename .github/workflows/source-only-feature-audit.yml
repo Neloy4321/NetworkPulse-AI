@@ -83,10 +83,14 @@ jobs:
               "strict_timestamp_separation", False
           ):
               raise SystemExit("Source-only chronology not verified: FAIL")
-          benchmark = report.get("source_only_baseline", {})
-          if benchmark.get("status") != "source_only_development_measurement_not_acceptance":
-              print(f"Audit completed; benchmark BLOCKED: {benchmark.get('status')}")
-              print(f"Chronological dev class counts: {benchmark.get('dev_class_counts')}")
-              raise SystemExit("No supported two-class source-only baseline: FAIL")
-          print("Source-only baseline available; still NOT operational ML acceptance")
+          temporal = report.get("source_only_baseline", {})
+          print(f"Chronological benchmark status: {temporal.get('status')}")
+          print(f"Chronological dev class counts: {temporal.get('dev_class_counts')}")
+          grouped = report.get("source_only_grouped_baseline", {})
+          if grouped.get("status") != "source_only_grouped_development_measurement_not_acceptance":
+              print(f"Group-disjoint benchmark BLOCKED: {grouped.get('status')}")
+              raise SystemExit("No supported grouped source-only benchmark: FAIL")
+          if grouped.get("host_pair_group_disjoint") is not True:
+              raise SystemExit("Development groups overlap: FAIL")
+          print("Group-disjoint SOURCE-ONLY baseline available; NOT operational acceptance")
           PY
