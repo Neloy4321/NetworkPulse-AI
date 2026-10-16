@@ -190,12 +190,18 @@ def test_partial_file_without_explicit_quota_message_is_retried(tmp_path: Path):
     assert report["status"] == "ready"
 
 
-def test_workflow_fails_when_fetch_sources_not_ready():
-    workflow = Path(__file__).resolve().parents[1] / ".github/workflows/native-cross-dataset.yml"
+def test_integrated_source_only_workflow_fails_on_missing_verified_evidence():
+    # This integration intentionally leaves the independently failing TON
+    # numerical-acceptance workflow on draft PR #25. Only the fully tested
+    # fail-closed R2 research source-acquisition pipeline is promoted.
+    workflow = Path(__file__).resolve().parents[1] / ".github/workflows/source-only-feature-audit.yml"
     content = workflow.read_text(encoding="utf-8")
-    assert "Fail when authorized source archives are unavailable" in content
-    assert "steps.fetch-sources.outputs.ready != 'true'" in content
-    assert "exit 1" in content
+    assert "private_r2_sources" in content
+    assert "Fail when source-only audit is unavailable" in content
+    assert "if: always()" in content
+    assert "Source-only audit evidence unavailable: FAIL" in content
+    assert "Invalid source-only audit status: FAIL" in content
+    assert "Unexpected operational acceptance claim: FAIL" in content
 
 
 def test_refuse_zero_attempts_without_marking_archives_ready(tmp_path: Path):
