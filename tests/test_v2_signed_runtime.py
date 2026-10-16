@@ -37,7 +37,8 @@ def event(i: int, *, missing: bool = False) -> FlowV2:
 
 def quality_payload(sha: str) -> dict:
     now = datetime.now(timezone.utc)
-    stamp = lambda t: t.isoformat(timespec="seconds").replace("+00:00", "Z")
+    def stamp(t):
+        return t.isoformat(timespec="seconds").replace("+00:00", "Z")
     return {
         "candidate_sha256": sha,
         "independent_site_verified": True,
