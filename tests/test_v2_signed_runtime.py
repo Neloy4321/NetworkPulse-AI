@@ -64,7 +64,7 @@ def quality_payload(sha: str) -> dict:
     }
 
 
-def fixtures(tmp_path: Path, payload_update=None):
+def fixtures(tmp_path: Path, payload_update=None, cutoff=0.5):
     training = [event(i, missing=(i % 4 == 0)) for i in range(30)]
     vectorizer = DictVectorizer(sparse=False)
     x = vectorizer.fit_transform([features_v2(e) for e in training])
@@ -75,7 +75,7 @@ def fixtures(tmp_path: Path, payload_update=None):
         "artifact_sha256": None,
         "production_signed": False,
         "independent_test_performed": False,
-        "protocol": {"feature_contract": V2_FEATURE_CONTRACT, "threshold": 0.5},
+        "protocol": {"feature_contract": V2_FEATURE_CONTRACT, "threshold": cutoff},
         "protocol_sha256": "f" * 64,
     }
     blob = {
@@ -85,7 +85,7 @@ def fixtures(tmp_path: Path, payload_update=None):
         "feature_contract": V2_FEATURE_CONTRACT,
         "protocol_sha256": meta["protocol_sha256"],
         "scikit_learn_version": sklearn.__version__,
-        "fixed_cutoff": 0.5,
+        "fixed_cutoff": cutoff,
         "vectorizer": vectorizer,
         "estimator": model,
     }
@@ -222,3 +222,22 @@ def test_non_v2_or_labeled_inference_forbidden(tmp_path: Path):
         active.score([event(4).model_copy(update={"label": "anomaly"})])
     with pytest.raises(ValueError, match="Bounded"):
         active.score([event(4)]*513)
+
+
+
+def test_signed_nondefault_source_calibrated_cutoff_is_hash_bound(tmp_path: Path):
+    path, manifest, receipt, trust, sha = fixtures(tmp_path, cutoff=0.2)
+    runtime = V2SignedRuntime.open(
+        path, manifest, receipt, trust, expected_sha256=sha
+    )
+    assert runtime.threshold == 0.2
+    a = runtime.score([event(3), event(7, missing=True)])
+    assert len(a) == 2
+    assert all(x["threshold"] == 0.2 for x in a)
+    # Manipulating the cutoff in the external manifest cannot alter the signed
+    # original model without invalidating the authenticated feature contract.
+    changed = json.loads(manifest.read_text("utf-8"))
+    changed["protocol"]["threshold"] = 0.3
+    manifest.write_text(json.dumps(changed))
+    with pytest.raises(ValueError, match="not equivalent"):
+        V2SignedRuntime.open(path, manifest, receipt, trust, expected_sha256=sha)
