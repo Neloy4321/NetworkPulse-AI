@@ -12,6 +12,8 @@ on:
       - 'networkpulse/evaluation/source_only_loco.py'
       - 'networkpulse/evaluation/frozen_rf_research.py'
       - 'networkpulse/evaluation/source_training_ledger.py'
+      - 'networkpulse/evaluation/iot23v2_source_adapter.py'
+      - 'networkpulse/evaluation/iot23v2_exact_runtime_recheck.py'
       - 'networkpulse/evaluation/prospective_external_rf.py'
       - 'networkpulse/evaluation/private_r2_sources.py'
       - 'networkpulse/evaluation/live_unsw.py'
@@ -24,6 +26,8 @@ on:
       - 'tests/test_source_only_loco.py'
       - 'tests/test_frozen_rf_research.py'
       - 'tests/test_prospective_external_rf.py'
+      - 'tests/test_iot23v2_source_adapter.py'
+      - 'tests/test_iot23v2_exact_runtime_recheck.py'
   workflow_dispatch:
 
 permissions:
@@ -42,9 +46,9 @@ jobs:
       - name: Install research runtime and read-only R2 client
         run: python -m pip install -e '.[dev]' 'boto3>=1.34,<2'
       - name: Lint source-only research contract and tests
-        run: python -m ruff check networkpulse/evaluation/source_only_feature_audit.py tests/test_source_only_feature_audit.py networkpulse/evaluation/source_only_candidates.py tests/test_source_only_candidates.py networkpulse/evaluation/source_only_capture_stress.py tests/test_source_only_capture_stress.py networkpulse/evaluation/source_only_readiness.py tests/test_source_only_readiness.py networkpulse/evaluation/source_only_loco.py tests/test_source_only_loco.py networkpulse/evaluation/frozen_rf_research.py tests/test_frozen_rf_research.py networkpulse/evaluation/prospective_external_rf.py tests/test_prospective_external_rf.py networkpulse/evaluation/source_training_ledger.py
+        run: python -m ruff check networkpulse/evaluation/source_only_feature_audit.py tests/test_source_only_feature_audit.py networkpulse/evaluation/source_only_candidates.py tests/test_source_only_candidates.py networkpulse/evaluation/source_only_capture_stress.py tests/test_source_only_capture_stress.py networkpulse/evaluation/source_only_readiness.py tests/test_source_only_readiness.py networkpulse/evaluation/source_only_loco.py tests/test_source_only_loco.py networkpulse/evaluation/frozen_rf_research.py tests/test_frozen_rf_research.py networkpulse/evaluation/prospective_external_rf.py tests/test_prospective_external_rf.py networkpulse/evaluation/source_training_ledger.py networkpulse/evaluation/iot23v2_source_adapter.py tests/test_iot23v2_source_adapter.py networkpulse/evaluation/iot23v2_exact_runtime_recheck.py tests/test_iot23v2_exact_runtime_recheck.py
       - name: Unit tests for source-only research and leakage guards
-        run: python -m pytest -q tests/test_source_only_feature_audit.py tests/test_private_r2_sources.py tests/test_source_only_candidates.py tests/test_source_only_capture_stress.py tests/test_source_only_readiness.py tests/test_source_only_loco.py tests/test_frozen_rf_research.py tests/test_prospective_external_rf.py
+        run: python -m pytest -q tests/test_source_only_feature_audit.py tests/test_private_r2_sources.py tests/test_source_only_candidates.py tests/test_source_only_capture_stress.py tests/test_source_only_readiness.py tests/test_source_only_loco.py tests/test_frozen_rf_research.py tests/test_prospective_external_rf.py tests/test_iot23v2_source_adapter.py tests/test_iot23v2_exact_runtime_recheck.py
       - name: Fetch ONLY pinned UNSW source archive from private R2
         env:
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
@@ -135,6 +139,37 @@ jobs:
               raise SystemExit("Source training ledger not reproducible: FAIL")
           print("Private hashed source ledger independently reproduced; not an artifact")
           PY
+      - name: Fetch SHA-pinned IoT-23v2 public flow file for exposed research corroboration
+        run: |
+          python - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+          from networkpulse.evaluation.iot23v2_source_adapter import SOURCE_URL
+          from networkpulse.evaluation.iot23v2_exact_runtime_recheck import SOURCE_SHA256, SOURCE_BYTES
+          # This is a previously EXPOSED target, not a prospective pristine holdout.
+          with urlopen(Request(SOURCE_URL, headers={"User-Agent": "NetworkPulse-AI-research/1.0"}), timeout=120) as response:
+              if response.status != 200:
+                  raise SystemExit("Official IoT-23v2 dataset URL did not return HTTP 200")
+              data = response.read(SOURCE_BYTES + 1)
+          if len(data) != SOURCE_BYTES or hashlib.sha256(data).hexdigest() != SOURCE_SHA256:
+              raise SystemExit("Downloaded IoT-23v2 bytes differ from user uploaded pinned original")
+          Path("research-private").mkdir(parents=True, exist_ok=True)
+          path = Path("research-private/iot23v2-public-source.labeled")
+          fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+          with os.fdopen(fd, "wb") as out:
+              out.write(data)
+          print("External research dataset SHA validated; no raw external rows to be uploaded")
+          PY
+      - name: Recheck EXPOSED IoT-23v2 model performance in original freeze runtime
+        run: >-
+          python -m networkpulse.evaluation.iot23v2_exact_runtime_recheck
+          --iot23v2-source research-private/iot23v2-public-source.labeled
+          --frozen-bundle research-private/frozen-source-rf-research-only.joblib
+          --frozen-manifest real-evidence/frozen-source-rf-manifest.json
+          --private-training-ledger research-private/source-training-ledger.tsv
+          --aggregate-evidence real-evidence/iot23v2-exposed-recheck.json
       - name: Preserve aggregate-only source-only research evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -147,6 +182,7 @@ jobs:
             real-evidence/source-only-readiness.json
             real-evidence/source-only-loco.json
             real-evidence/frozen-source-rf-manifest.json
+            real-evidence/iot23v2-exposed-recheck.json
           retention-days: 14
           if-no-files-found: warn
       - name: Preserve restricted research model artifact (NOT production)
@@ -159,7 +195,7 @@ jobs:
           if-no-files-found: error
       - name: Remove research-only model from ephemeral runner
         if: always()
-        run: rm -f research-private/frozen-source-rf-research-only.joblib research-private/source-training-ledger.tsv research-private/reconstructed-source-ledger.tsv
+        run: rm -f research-private/frozen-source-rf-research-only.joblib research-private/source-training-ledger.tsv research-private/reconstructed-source-ledger.tsv research-private/iot23v2-public-source.labeled
       - name: Remove restricted raw source archive
         if: always()
         run: rm -f unsw-source.zip
@@ -273,6 +309,18 @@ jobs:
               raise SystemExit("Research model was incorrectly production approved")
           if frozen.get("operator_signed") is not False:
               raise SystemExit("Research model claims nonexistent sign-off")
+          exposed_file = Path("real-evidence/iot23v2-exposed-recheck.json")
+          if not exposed_file.is_file():
+              raise SystemExit("Exact-runtime exposed IoT-23 research result missing: FAIL")
+          exposed = json.loads(exposed_file.read_text(encoding="utf-8"))
+          if exposed.get("status") != "completed_exposed_laboratory_family_research_no_acceptance":
+              raise SystemExit("IoT-23 source compatibility test did not complete")
+          if exposed.get("production_ml_acceptance_demonstrated") is not False:
+              raise SystemExit("IoT-23 lab data must not authorize production acceptance")
+          if exposed.get("model_untouched_from_prior_unsw_freeze") is not True:
+              raise SystemExit("Detected forbidden model freeze mutation after target labels")
+          if exposed.get("training_flow_overlap") != 0:
+              raise SystemExit("Exposed IoT-23 and UNSW training flows overlap")
           print("Research-only model freeze complete; INDEPENDENT SITE NOT VALIDATED")
           print("Group-disjoint SOURCE-ONLY baseline available; NOT operational acceptance")
           PY
