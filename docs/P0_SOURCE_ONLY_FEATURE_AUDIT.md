@@ -90,3 +90,42 @@ across runs; no production promotion takes place.
 **Known prior TON result:** 105 FP / 480 benign (21.875% observed FPR,
 25.7886% Wilson upper); 4507 TP / 4520 attacks. This remains **FAILED**.
 Stage 1 does not change or improve this measured result.
+
+
+## Executed Stage 1 real-source CI evidence (2026-10-16)
+
+[Authentic GitHub Actions run 38879398171](https://github.com/Neloy4321/NetworkPulse-AI/actions/runs/38879398171):
+**PASS** for the source-only audit job with 23 focused tests passed, private
+UNSW R2 exact-byte/SHA-256 verification, a 60,000-flow source-only audit, and
+an aggregate-only artifact **12036717883**. This confirms execution only.
+
+- Full original member scan: **699,934 valid / 67 invalid** records;
+  **677,719 benign / 22,215 anomaly** labels. Only 60,000 uniformly
+  reservoir-sampled flow events proceed to the development investigation.
+- Chronological split after duplicate removal: **44,031 source-fit** /
+  **14,679 development** events, with strict timestamp separation; development
+  labels **14,679 benign / 0 anomaly**, hence two-class metrics **NOT available**.
+- Fixed-seed host-pair/protocol-disjoint split: **45,717 source-fit** /
+  **12,993 development**, with **420 original groups** and no group overlap;
+  development labels **12,729 benign / 264 anomaly**. No chronological
+  independence is claimed.
+- Frozen-code (not production-frozen-artifact) native IsolationForest feature v1
+  research baseline: **TN 12,567 / FP 162 / FN 245 / TP 19**;
+  source-only observed benign **FPR 1.2727%** (95% Wilson
+  **1.0921%–1.4826%**), attack **recall 7.1970%** (95% Wilson
+  **4.6555%–10.9662%**).
+- This development sample reports observations from **one capture date
+  (2015-01-22)**. Same-capture and correlated-flow limitations are fundamental.
+  A small FPR here does not offset catastrophic missed attacks and does not
+  imply an external-site acceptance improvement.
+- Research protocol SHA-256: 
+  `a19dcef2f44fdafe2064f227309f870f113b31ed9e3b5df1341ba2978c00d9b1`.
+  Numeric acceptance is **NOT demonstrated**, the previously exposed TON
+  benchmark remains **FAILED**, and no feature/model/threshold is promoted.
+
+**Stage 2 design consequence:** the source-only development diagnostics need
+both low FPR and adequate attack recall. Confirm attack label interpretation and
+benign-fit calibration semantics from UNSW source documentation, then
+pre-register *few* alternative versioned candidate representations without
+using exposed TON outcomes for selection. A new untouched external labeled
+capture is still necessary to make a credible independent acceptance claim.
