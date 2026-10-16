@@ -219,3 +219,41 @@ The previous exposed TON `Network_dataset_23.csv` cannot validate a new
 candidate as untouched. Signed active-model equivalence, deployment
 reliability and operator-reviewed production false-alert burden are still
 unproven. P0 Operational ML Acceptance remains **NOT DEMONSTRATED**.
+
+
+## Stage 3 — locked same-UNSW cross-capture stress protocol
+
+Before making any production promotion decision, evaluate the *exact same
+predeclared* two supervised research candidates on captures 2, 3 and 4 from
+the **same pinned UNSW archive**. This is not a new site or independent family.
+
+- Source FIT: fixed seed 42, 60,000-row reservoir from `UNSW-NB15_1.csv`,
+  canonical/fingerprint-deduplicated host-pair/protocol-group split. Use FIT
+  labels only for supervised RandomForest fitting. Source development rows
+  are not used to fit or tune the fixed cutoff.
+- Stress captures: `UNSW-NB15_2.csv`, `UNSW-NB15_3.csv`,
+  `UNSW-NB15_4.csv` with separate uniform reservoirs **8,000 rows** each,
+  seeds **43, 44, 45**, each member fully scanned and validated. Exact
+  row/source-fit normalized fingerprint overlap is excluded; count exclusions.
+  This protection covers **sampled rows only**, not all records in a capture.
+- Model parameters and threshold are the fixed Stage 2 values; evaluate BOTH
+  candidates with no target-label-informed selection or reranking.
+  At least **100 benign and 100 attack** distinct flows per capture is required
+  to report binary FPR/recall. Otherwise mark the capture **blocked** instead
+  of generating an invented recall.
+- For each supported capture, report aggregate TN/FP/FN/TP, observed FPR,
+  recall, Wilson intervals and diagnostic numerical target flags
+  (**FPR upper <=5%; recall lower >=80%**). A metric target flag is
+  **NOT** operational or untouched holdout acceptance. Capture 4 was
+  previously inspected in an older UNSW experiment.
+- Report details only in an aggregate GitHub Actions artifact, never raw
+  flow addresses, identifier keys, signed production model artifacts, or
+  source ZIP. The original IsolationForest production model remains unchanged.
+
+**Interpretation:** This is within-UNSW multi-capture stress, susceptible to
+shared simulation topology, sensor specifics, training-sample coverage and
+flow correlation. The same-source chronological split previously had no
+attack examples in its development portion. Any stress failure is a
+real research finding, not grounds for weakening the 5%/80% external
+predeclared acceptance thresholds. A new untouched independently operated
+labeled site plus real deployment equivalence remains essential for P0.
