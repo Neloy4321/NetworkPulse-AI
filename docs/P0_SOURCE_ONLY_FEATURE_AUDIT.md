@@ -290,3 +290,67 @@ This motivated research ablations; it does not establish their effectiveness.
 
 Do not upload or publish copies of the R2 ZIP. No raw traffic is committed
 to the public GitHub repo or preserved as workflow artifacts.
+
+
+## Stage 3 — authentic same-UNSW cross-capture result (2026-10-16)
+
+Source of truth: [GitHub Actions run 38887189041](https://github.com/Neloy4321/NetworkPulse-AI/actions/runs/38887189041),
+aggregate research artifact **12040032406**; **39 regression tests and Ruff passed**,
+SHA-pinned authenticated UNSW source download verified, then all three
+additional members were fully scanned. No raw network records were uploaded.
+
+Predeclared metrics for the original feature-v1 supervised RandomForest:
+
+| Capture | After exact-overlap exclusion | Benign | Attack | TN | FP | FN | TP | FPR | FPR Wilson 95% upper | Recall | Recall Wilson 95% lower |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| UNSW 2 | 7,940 | 7,365 | 575 | 6,980 | 385 | 6 | 569 | 5.2274% | 5.7595% | 98.9565% | 97.7423% |
+| UNSW 3 | 7,703 | 6,083 | 1,620 | 4,783 | 1,300 | 10 | 1,610 | 21.3710% | 22.4191% | 99.3827% | 98.8674% |
+| UNSW 4 | 7,579 | 6,176 | 1,403 | 4,875 | 1,301 | 5 | 1,398 | 21.0654% | 22.1002% | 99.6436% | 99.1684% |
+
+The state-ablated port-bucket RF shows the same pattern:
+
+| Capture | FP | FN | FPR | FPR Wilson 95% upper | Recall |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| UNSW 2 | 391 | 6 | 5.3089% | 5.8446% | 98.9565% |
+| UNSW 3 | 1,311 | 12 | 21.5519% | 22.6029% | 99.2593% |
+| UNSW 4 | 1,318 | 8 | 21.3407% | 22.3801% | 99.4298% |
+
+**Critical: both candidates FAIL the predeclared FPR 95% upper ≤5%
+criterion on EVERY stress capture.** High attack recall does not offset
+this failure. Stage 2 grouped-development RF FPR=4.5801% gave
+misleading optimism about portability; the 3 additional raw CSV parts
+expose severe within-lab distribution shift. This is stronger evidence
+of a generalization blocker, **not independent-site certification**.
+
+Source ZIP provenance remains fixed at
+`3c7500f120405b21b44a2bf05134f49491f88a655ae3091fc1b269c4c9ece79a`.
+The Stage 3 protocol SHA-256 was
+`507a0a82e3c95ff5f7604f226bdca20e9f69689722d23d1057fd0bc38ee77891`.
+Source-1 FIT is a sampled, host-pair-grouped subset; overlap removal
+against captures 2/3/4 excludes only exact sampled normalized records,
+not all overlapping hosts or correlated flows.
+
+**NO-GO consequence:** Do not select RF v1 because it passed Stage 2,
+do not increase a threshold based on captures 2–4, and do not claim
+a model is frozen, field validated, signed/active, or ready to merge
+as P0 acceptance. The already-inspected TON target is similarly
+unusable as a pristine acceptance holdout. Future alternative training
+designs may *treat these exposed captures as development/training only*
+if declared explicitly in advance, but an independently acquired and
+held-out site is still required for defensible acceptance.
+
+### Release/acceptance blocker status
+
+- [x] R2 source object and per-byte SHA-256 integrity evidence
+- [x] Source-only feature audit, honest class support and fixed benchmark protocol
+- [x] Real within-UNSW cross-capture stress: **executed, quality gates FAILED**
+- [x] Report-only fail-closed NO-GO logic, never automatic model promotion
+- [ ] Training strategy robust to source capture shifts; not demonstrated
+- [ ] Frozen reviewed signed artifact with approved provenance/ledger
+- [ ] Untouched independently operated, independently labeled site evaluation
+- [ ] Active deployment equivalence, per-day/site false alerts and analyst review
+- [ ] Compromised R2 upload token rotation and separate scoped read-only CI credential
+
+Note: A GitHub Actions *green* research job means the predetermined
+measurement and report executed correctly. It is **not** a green
+production deployment or external ML acceptance check.
