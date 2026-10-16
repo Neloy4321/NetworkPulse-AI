@@ -1,0 +1,19 @@
+# Operator-owned DNS hostname + public ACME access REQUIRED for real TLS.
+# Only Caddy binds public ports. Never proxy internal Prometheus metrics.
+{$NETWORKPULSE_STAGING_DOMAIN} {
+    encode zstd gzip
+    request_body {
+        max_size 128KB
+    }
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "no-referrer"
+        Cache-Control "no-store"
+        -Server
+    }
+    @private path /internal/* /metrics /docs /redoc /openapi.json /api/v1/* /api/v2/*
+    respond @private 404
+    reverse_proxy api:8000
+}

@@ -1,0 +1,115 @@
+# Standalone infrastructure-only staging. Never extends the real Detector stack.
+# No ML ingestion, frozen models, datasets or synthetic production approvals.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: networkpulse_staging_infra
+      POSTGRES_USER: networkpulse_staging
+      POSTGRES_PASSWORD: ${NETWORKPULSE_STAGING_DB_PASSWORD:?Dedicated staging DB secret required}
+    volumes:
+      - infra_staging_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U networkpulse_staging -d networkpulse_staging_infra"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks: [staging_private]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command:
+      - sh
+      - -ec
+      - exec redis-server --save 60 1 --appendonly yes --maxmemory-policy noeviction --requirepass "$$NETWORKPULSE_STAGING_REDIS_PASSWORD"
+    environment:
+      NETWORKPULSE_STAGING_REDIS_PASSWORD: ${NETWORKPULSE_STAGING_REDIS_PASSWORD:?Dedicated staging Redis secret required}
+    volumes:
+      - infra_staging_redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$NETWORKPULSE_STAGING_REDIS_PASSWORD redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks: [staging_private]
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.infra-staging
+    restart: unless-stopped
+    init: true
+    user: "10001:10001"
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 512m
+    tmpfs:
+      - /tmp:rw,nosuid,noexec,nodev,size=32m,mode=1777
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    environment:
+      NETWORKPULSE_STAGING_MODE: non_ml_infrastructure_only
+      NETWORKPULSE_STAGING_DB_NAME: networkpulse_staging_infra
+      NETWORKPULSE_STAGING_DB_HOST: db
+      NETWORKPULSE_STAGING_DB_PASSWORD: ${NETWORKPULSE_STAGING_DB_PASSWORD:?Dedicated staging DB secret required}
+      NETWORKPULSE_STAGING_REDIS_HOST: redis
+      NETWORKPULSE_STAGING_REDIS_PASSWORD: ${NETWORKPULSE_STAGING_REDIS_PASSWORD:?Dedicated staging Redis secret required}
+      NETWORKPULSE_STAGING_OIDC_ISSUER: ${NETWORKPULSE_STAGING_OIDC_ISSUER:?HTTPS issuer required}
+      NETWORKPULSE_STAGING_OIDC_JWKS_URL: ${NETWORKPULSE_STAGING_OIDC_JWKS_URL:?HTTPS JWKS required}
+      NETWORKPULSE_STAGING_OIDC_AUDIENCE: ${NETWORKPULSE_STAGING_OIDC_AUDIENCE:?OIDC audience required}
+      NETWORKPULSE_STAGING_OIDC_ROLE_CLAIM: ${NETWORKPULSE_STAGING_OIDC_ROLE_CLAIM:-networkpulse_role}
+    expose: ["8000"]
+    networks: [staging_private]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready',timeout=4)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  caddy:
+    image: caddy:2.11.7
+    restart: unless-stopped
+    depends_on:
+      api: {condition: service_healthy}
+    environment:
+      NETWORKPULSE_STAGING_DOMAIN: ${NETWORKPULSE_STAGING_DOMAIN:?Real DNS hostname required}
+    volumes:
+      - ../infra/Caddyfile.infra-staging:/etc/caddy/Caddyfile:ro
+      - infra_staging_caddy_data:/data
+      - infra_staging_caddy_config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+    networks: [staging_private, staging_egress]
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yaml
+      - --storage.tsdb.retention.time=7d
+    volumes:
+      - ../infra/prometheus/staging-infra.yaml:/etc/prometheus/prometheus.yaml:ro
+      - infra_staging_metrics:/prometheus
+    depends_on:
+      api: {condition: service_healthy}
+    networks: [staging_private]
+    # No host ports; access over an authorized private tunnel.
+
+volumes:
+  infra_staging_pg_data:
+  infra_staging_redis_data:
+  infra_staging_metrics:
+  infra_staging_caddy_data:
+  infra_staging_caddy_config:
+
+networks:
+  staging_private: {}
+  staging_egress: {}

@@ -1,0 +1,21 @@
+# Stage A ONLY: non-ML infrastructure test API. Never starts the IDS detector.
+# Production image signing, base digest pinning and SBOM review remain later gates.
+FROM python:3.12-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+WORKDIR /app
+RUN python -m pip install --no-cache-dir \
+    'fastapi>=0.115,<1' 'uvicorn[standard]>=0.30,<1' \
+    'PyJWT[crypto]>=2.9,<3' 'psycopg[binary]>=3.2,<4' \
+    'redis>=5,<7' 'prometheus-client>=0.21,<1'
+COPY networkpulse/__init__.py ./networkpulse/__init__.py
+COPY networkpulse/security/oidc.py ./networkpulse/security/oidc.py
+COPY networkpulse/infra_staging.py ./networkpulse/infra_staging.py
+RUN groupadd --system --gid 10001 staging && \
+    useradd --system --uid 10001 --gid 10001 --home-dir /app staging && \
+    chown -R staging:staging /app
+USER 10001:10001
+EXPOSE 8000
+HEALTHCHECK --interval=20s --timeout=5s --start-period=40s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready',timeout=4)"
+CMD ["uvicorn", "networkpulse.infra_staging:create_production_like_staging_app", \
+     "--factory", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
