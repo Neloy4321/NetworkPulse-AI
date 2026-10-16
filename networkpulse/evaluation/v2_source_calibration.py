@@ -214,6 +214,11 @@ def main():
             args.research_model.read_bytes()
         ).hexdigest()
         report["bundle_protocol_sha256"] = protocol_sha
+        report["protocol"] = proto
+        report["protocol_sha256"] = protocol_sha
+        report["artifact_sha256"] = report["research_model_sha256"]
+        report["production_signed"] = False
+        report["independent_test_performed"] = False
         report["runtime_version"] = platform.python_version()
     else:
         report["research_model_sha256"] = None
