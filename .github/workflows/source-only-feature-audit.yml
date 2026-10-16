@@ -10,6 +10,8 @@ on:
       - 'networkpulse/evaluation/source_only_capture_stress.py'
       - 'networkpulse/evaluation/source_only_readiness.py'
       - 'networkpulse/evaluation/source_only_loco.py'
+      - 'networkpulse/evaluation/frozen_rf_research.py'
+      - 'networkpulse/evaluation/prospective_external_rf.py'
       - 'networkpulse/evaluation/private_r2_sources.py'
       - 'networkpulse/evaluation/live_unsw.py'
       - 'networkpulse/features.py'
@@ -19,6 +21,8 @@ on:
       - 'tests/test_source_only_capture_stress.py'
       - 'tests/test_source_only_readiness.py'
       - 'tests/test_source_only_loco.py'
+      - 'tests/test_frozen_rf_research.py'
+      - 'tests/test_prospective_external_rf.py'
   workflow_dispatch:
 
 permissions:
@@ -37,9 +41,9 @@ jobs:
       - name: Install research runtime and read-only R2 client
         run: python -m pip install -e '.[dev]' 'boto3>=1.34,<2'
       - name: Lint source-only research contract and tests
-        run: python -m ruff check networkpulse/evaluation/source_only_feature_audit.py tests/test_source_only_feature_audit.py networkpulse/evaluation/source_only_candidates.py tests/test_source_only_candidates.py networkpulse/evaluation/source_only_capture_stress.py tests/test_source_only_capture_stress.py networkpulse/evaluation/source_only_readiness.py tests/test_source_only_readiness.py networkpulse/evaluation/source_only_loco.py tests/test_source_only_loco.py
+        run: python -m ruff check networkpulse/evaluation/source_only_feature_audit.py tests/test_source_only_feature_audit.py networkpulse/evaluation/source_only_candidates.py tests/test_source_only_candidates.py networkpulse/evaluation/source_only_capture_stress.py tests/test_source_only_capture_stress.py networkpulse/evaluation/source_only_readiness.py tests/test_source_only_readiness.py networkpulse/evaluation/source_only_loco.py tests/test_source_only_loco.py networkpulse/evaluation/frozen_rf_research.py tests/test_frozen_rf_research.py networkpulse/evaluation/prospective_external_rf.py tests/test_prospective_external_rf.py
       - name: Unit tests for source-only research and leakage guards
-        run: python -m pytest -q tests/test_source_only_feature_audit.py tests/test_private_r2_sources.py tests/test_source_only_candidates.py tests/test_source_only_capture_stress.py tests/test_source_only_readiness.py tests/test_source_only_loco.py
+        run: python -m pytest -q tests/test_source_only_feature_audit.py tests/test_private_r2_sources.py tests/test_source_only_candidates.py tests/test_source_only_capture_stress.py tests/test_source_only_readiness.py tests/test_source_only_loco.py tests/test_frozen_rf_research.py tests/test_prospective_external_rf.py
       - name: Fetch ONLY pinned UNSW source archive from private R2
         env:
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
@@ -85,6 +89,29 @@ jobs:
           python -m networkpulse.evaluation.source_only_loco
           --unsw-zip unsw-source.zip
           --output real-evidence/source-only-loco.json
+      - name: Freeze reviewed source-only RF research bundle (unsigned, NOT deployed)
+        run: >-
+          python -m networkpulse.evaluation.frozen_rf_research
+          --unsw-zip unsw-source.zip
+          --loco-report real-evidence/source-only-loco.json
+          --bundle research-private/frozen-source-rf-research-only.joblib
+          --manifest real-evidence/frozen-source-rf-manifest.json
+      - name: Verify frozen research bundle SHA and provenance without unpickling
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from networkpulse.evaluation.frozen_rf_research import verify_bundle_checksum, SELECTED
+          bundle = Path("research-private/frozen-source-rf-research-only.joblib")
+          manifest = json.loads(Path("real-evidence/frozen-source-rf-manifest.json").read_text())
+          verify_bundle_checksum(bundle, manifest["bundle_sha256"])
+          assert manifest["selected_candidate"] == SELECTED
+          assert manifest["training_unique"] >= 1000
+          assert manifest["production_approved"] is False
+          assert manifest["operator_signed"] is False
+          assert manifest["independent_site_evaluated"] is False
+          print("Frozen research bundle SHA verified; SIGNED DEPLOYED ML ACCEPTANCE NOT CLAIMED")
+          PY
       - name: Preserve aggregate-only source-only research evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -96,8 +123,20 @@ jobs:
             real-evidence/source-only-capture-stress.json
             real-evidence/source-only-readiness.json
             real-evidence/source-only-loco.json
+            real-evidence/frozen-source-rf-manifest.json
           retention-days: 14
           if-no-files-found: warn
+      - name: Preserve restricted research model artifact (NOT production)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-frozen-source-rf-research-only
+          path: research-private/frozen-source-rf-research-only.joblib
+          retention-days: 30
+          if-no-files-found: error
+      - name: Remove research-only model from ephemeral runner
+        if: always()
+        run: rm -f research-private/frozen-source-rf-research-only.joblib
       - name: Remove restricted raw source archive
         if: always()
         run: rm -f unsw-source.zip
@@ -201,5 +240,16 @@ jobs:
                   "blocked_insufficient_natural_class_support"
               }:
                   raise SystemExit("Unsupported LOCO evaluation status")
+          frozen_path = Path("real-evidence/frozen-source-rf-manifest.json")
+          if not frozen_path.is_file():
+              raise SystemExit("Research RF freeze manifest unavailable: FAIL")
+          frozen = json.loads(frozen_path.read_text(encoding="utf-8"))
+          if frozen.get("status") != "source_only_supervised_research_bundle_frozen":
+              raise SystemExit("Research model freeze did not complete")
+          if frozen.get("production_approved") is not False:
+              raise SystemExit("Research model was incorrectly production approved")
+          if frozen.get("operator_signed") is not False:
+              raise SystemExit("Research model claims nonexistent sign-off")
+          print("Research-only model freeze complete; INDEPENDENT SITE NOT VALIDATED")
           print("Group-disjoint SOURCE-ONLY baseline available; NOT operational acceptance")
           PY
