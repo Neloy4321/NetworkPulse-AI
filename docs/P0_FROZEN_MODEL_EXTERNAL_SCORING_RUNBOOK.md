@@ -166,6 +166,12 @@ and prevent repeated target-driven tuning.
    second dataset *family* under research rules, but does NOT constitute
    a production network/site. Official source:
    https://www.stratosphereips.org/datasets-iot23
+   **Access permission:** The official README for individual
+   `CTU-IoT-Malware-Capture-34-1` explicitly states authorization
+   from the Stratosphere Lab is needed to use that capture:
+   https://mcfp.felk.cvut.cz/publicDatasets/IoT-23-Dataset/IndividualScenarios/CTU-IoT-Malware-Capture-34-1/
+   Obtain written permission or choose a demonstrably freely licensed
+   alternative before downloading/processing scenario files.
 4. Rotate earlier-exposed R2 credentials and use a separate read-only
    bucket-scoped CI token. Do not embed any R2 secrets in artifacts.
 
