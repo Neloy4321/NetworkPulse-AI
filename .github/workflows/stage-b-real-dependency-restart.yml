@@ -69,7 +69,7 @@ jobs:
             -f deploy/compose.infra-stage-b.ci.yml config --quiet
           docker compose -p "$NP_STAGE_B_PROJECT" \
             -f deploy/compose.infra-staging.yml \
-            -f deploy/compose.infra-stage-b.ci.yml up -d db redis
+            -f deploy/compose.infra-stage-b.ci.yml up -d --wait --wait-timeout 120 db redis
       - name: SIGKILL real PostgreSQL and Redis processes verify restart integrity
         run: |
           python -m networkpulse.infra_stage_b_restart \
