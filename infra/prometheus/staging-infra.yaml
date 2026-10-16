@@ -1,0 +1,10 @@
+# Internal Docker-network scraper only, with no public host ports.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: networkpulse-nonml-staging
+    metrics_path: /internal/metrics
+    static_configs:
+      - targets: ['api:8000']
