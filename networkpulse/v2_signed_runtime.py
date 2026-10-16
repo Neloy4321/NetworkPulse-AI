@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import joblib
@@ -19,6 +19,8 @@ import sklearn
 from networkpulse.feature_contract_v2 import FlowV2, V2_FEATURE_CONTRACT, features_v2
 from networkpulse.release_approval import verify_signed_approval
 from networkpulse.reliability import wilson_upper_bound
+
+_ADMISSION_TOKEN = object()  # minted only after verified Ed25519 receipt
 
 MIN_BENIGN = 200
 MIN_ATTACK = 100
@@ -104,6 +106,11 @@ class V2SignedRuntime:
     estimator: object
     threshold: float
     signer_key_id: str
+    _admission_token: object = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self):
+        if self._admission_token is not _ADMISSION_TOKEN:
+            raise ValueError("V2 runtime cannot be constructed without verified signed admission")
 
     @classmethod
     def open(
@@ -156,6 +163,7 @@ class V2SignedRuntime:
             estimator=estimator,
             threshold=0.5,
             signer_key_id=signed["signer_key_id"],
+            _admission_token=_ADMISSION_TOKEN,
         )
 
     def score(self, flows: list[FlowV2]) -> list[dict]:
