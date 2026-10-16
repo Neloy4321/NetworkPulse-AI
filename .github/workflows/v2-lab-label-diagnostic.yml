@@ -1,0 +1,58 @@
+name: External lab label taxonomy diagnostic (no model, no raw flows)
+
+on:
+  pull_request:
+    branches: ['copilot/fix-native-cross-dataset-job']
+    paths:
+      - '.github/workflows/v2-lab-label-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  published-zeek-label-taxonomy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit only source column width and label taxonomy counts, no IP data
+        run: |
+          python - <<'PY'
+          import collections
+          import hashlib
+          import re
+          from urllib.request import Request, urlopen
+          # Standard library ONLY: avoid importing model packages or reading raw IPs.
+          CAPTURES = {
+              "CTU-IoT-Malware-Capture-42-1":
+                  "2019-01-10-14-34-38-192.168.1.197-zeek-conn-log.labeled",
+              "CTU-Honeypot-Capture-4-1":
+                  "2018-10-25-14-06-32-192.168.1.132-zeek-conn.log.labeled",
+          }
+          root="https://mcfp.felk.cvut.cz/publicDatasets/IoT-23-Dataset-v2/"
+          for capture, filename in CAPTURES.items():
+              with urlopen(Request(root+capture+"/"+filename,headers={
+                  "User-Agent":"NetworkPulse-AI-academic-research/1.0"
+              }),timeout=120) as response:
+                  content=response.read(10_000_001)
+              if not 0 < len(content) <= 10_000_000:
+                  raise SystemExit("Dataset outside predeclared bound")
+              widths=collections.Counter()
+              labels=collections.Counter()
+              count=0
+              for line in content.decode("utf-8").splitlines():
+                  if line.startswith("#"): continue
+                  cols=line.split("\t")
+                  widths[len(cols)]+=1
+                  if len(cols)==21:
+                      label_parts=re.split(r"\s{2,}",cols[-1].strip())
+                      labels[tuple(label_parts)]+=1
+                  count+=1
+              print("capture:",capture,"sha256:",hashlib.sha256(content).hexdigest(),
+                    "total:",count,"field_widths:",dict(widths),
+                    "label_trailer_category_count:",len(labels))
+              # Only taxonomy fields, never IP/UID/flow contents.
+              for keys,n in labels.most_common(12):
+                  print("  source-label-cells:",keys,"count:",n)
+          PY

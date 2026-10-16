@@ -23,6 +23,35 @@
 > [!IMPORTANT]
 > **Honest scope:** This is a working **engineering demonstration and research prototype**, not a verified production NDR/IDS product. The default model and displayed evaluation metrics use **deterministic synthetic flows**. No claims are made about real intrusion-detection accuracy or continuously running cloud deployments.
 
+## P0 operational ML acceptance: not demonstrated
+
+**Current result: NO-GO for operational model promotion.** Authenticated private-R2
+source acquisition and independent source-integrity checks work, but the
+original UNSW→TON-IoT native IsolationForest research measurement failed the
+predeclared benign false-positive requirement: **21.875% observed FPR,
+25.7886% Wilson 95% upper vs ≤5% allowed**. The TON slice is
+already-exposed research evidence, not a new pristine field holdout.
+
+Further research on the existing feature branch:
+- [PR #25](https://github.com/Neloy4321/NetworkPulse-AI/pull/25):
+  private R2 downloads + fail-closed numerical research quality gate.
+- [PR #26](https://github.com/Neloy4321/NetworkPulse-AI/pull/26):
+  source-only feature audit, supervised candidate comparisons and
+  **cross-capture stress**. Capture-1-only RF training reached
+  **21.37%/21.07% false-positive rates** on UNSW 3/4. A subsequent
+  four-fold same-UNSW **Leave-One-Capture-Out** development experiment
+  (training on three captures) reported **0.83–2.54% FPR** with
+  **96.52–99.52% recall**; however, host-pair overlaps and the single
+  previously inspected lab make this **non-independent** research evidence.
+  No winning model or signed deployed artifact is approved for promotion.
+  See [independent acceptance evidence requirements](docs/P0_EXTERNAL_ACCEPTANCE_HOLDOUT_REQUEST.md).
+
+A green *research execution* check signifies credible measurement, **not**
+production IDS accuracy or acceptance. Stacked draft PRs are intentionally
+unmerged, and repository ZIP downloads never contain the private R2 dataset
+objects or GitHub Actions secrets. See
+[research protocol and real-data evidence](docs/P0_SOURCE_ONLY_FEATURE_AUDIT.md).
+
 ## The engineering problem
 
 Network logs are produced in different shapes by different sensors. An investigator needs them normalized, scored consistently, stored without duplication, and connected to alerts that have an auditable review history. NetworkPulse AI implements that complete **vertical slice**, so data engineering, ML evaluation, API design, persistence, and operational visibility are demonstrable in a single repository.

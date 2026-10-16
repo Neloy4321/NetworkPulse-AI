@@ -1,0 +1,107 @@
+name: IoT-23v2 full-capture V2 missingness-aware compatibility (NOT model acceptance)
+
+on:
+  pull_request:
+    branches: ['copilot/fix-native-cross-dataset-job']
+    paths:
+      - '.github/workflows/iot23v2-schema-preflight.yml'
+      - 'networkpulse/feature_contract_v2.py'
+      - 'networkpulse/adapters.py'
+      - 'networkpulse/evaluation/iot23v2_contract_v2_audit.py'
+      - 'networkpulse/evaluation/iot23v2_source_adapter.py'
+      - 'tests/test_feature_contract_v2.py'
+      - 'tests/test_iot23v2_contract_v2_audit.py'
+      - 'tests/test_iot23v2_source_adapter.py'
+      - 'tests/test_adapters.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  v2-missingness-contract-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install declared runtime
+        run: python -m pip install -e '.[dev]'
+      - name: Lint real-flow feature contract and compatibility tests
+        run: >-
+          python -m ruff check
+          networkpulse/feature_contract_v2.py
+          networkpulse/adapters.py
+          networkpulse/evaluation/iot23v2_contract_v2_audit.py
+          networkpulse/evaluation/iot23v2_source_adapter.py
+          tests/test_feature_contract_v2.py
+          tests/test_iot23v2_contract_v2_audit.py
+          tests/test_iot23v2_source_adapter.py
+      - name: Test unchanged V1 alongside V2 missing-value semantics
+        run: >-
+          python -m pytest -q
+          tests/test_feature_contract_v2.py
+          tests/test_iot23v2_contract_v2_audit.py
+          tests/test_iot23v2_source_adapter.py
+          tests/test_adapters.py
+      - name: Retrieve official already-exposed IoT-23v2 source with SHA pin
+        run: |
+          python - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+          from networkpulse.evaluation.iot23v2_source_adapter import SOURCE_URL
+          from networkpulse.evaluation.iot23v2_exact_runtime_recheck import (
+              SOURCE_BYTES, SOURCE_SHA256,
+          )
+          with urlopen(Request(SOURCE_URL, headers={
+              "User-Agent": "NetworkPulse-AI-research/1.0"
+          }), timeout=120) as response:
+              if response.status != 200:
+                  raise SystemExit("Official pinned dataset not accessible")
+              content = response.read(SOURCE_BYTES + 1)
+          if len(content) != SOURCE_BYTES or hashlib.sha256(content).hexdigest() != SOURCE_SHA256:
+              raise SystemExit("Raw IoT-23v2 source bytes do not match approved evidence")
+          target = Path("iot23v2-restricted.labeled")
+          fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+          with os.fdopen(fd, "wb") as output:
+              output.write(content)
+          print("Verified original IoT-23v2 source, no input tampering")
+          PY
+      - name: Audit all 23,145 authentic Zeek rows under V2 feature contract
+        run: >-
+          python -m networkpulse.evaluation.iot23v2_contract_v2_audit
+          --iot23v2-labeled iot23v2-restricted.labeled
+          --aggregate-report aggregate-evidence/iot23v2-feature-v2.json
+      - name: Assert full feature coverage does not imply ML PASS
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("aggregate-evidence/iot23v2-feature-v2.json").read_text())
+          assert report["status"] == "iot23v2_full_capture_v2_feature_compatibility_verified"
+          assert report["original_labeled_records"] == report["v2_parsed_and_vectorized"] == 23145
+          assert report["v2_rows_rejected"] == 0
+          assert report["v2_rows_with_missing_measurements"] == 17824
+          assert report["missing_measurements_never_converted_to_measured_zero"] is True
+          assert report["p0_operational_ml_acceptance"] == "NO_GO"
+          assert report["model_trained"] is False
+          print("V2 data compatibility verified, no model qualification implied")
+          PY
+      - name: Publish aggregate-only V2 feature contract audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iot23v2-v2-missingness-contract-research-only
+          path: aggregate-evidence/iot23v2-feature-v2.json
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Delete restricted labeled source data
+        if: always()
+        run: rm -f iot23v2-restricted.labeled
+
+# No R2 keys or raw network data are uploaded; successful tests do not pass P0 ML.
