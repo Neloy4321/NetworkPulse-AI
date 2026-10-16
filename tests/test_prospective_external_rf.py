@@ -13,6 +13,7 @@ import sklearn
 
 from networkpulse.evaluation.frozen_rf_research import (
     SELECTED, RESEARCH_CONTRACT, protocol_sha256,
+    private_ledger_bytes, write_private_training_ledger,
 )
 from networkpulse.evaluation.prospective_external_rf import (
     evaluate, read_verified_canonical, validate_target_attestation,
@@ -70,6 +71,10 @@ def prepare_files(tmp_path):
         "sklearn_version": sklearn.__version__,
         "vectorizer": vectorizer, "estimator": estimator,
     }
+    ledger_path = tmp_path / "private-training-ledger.tsv"
+    ledger_sha = write_private_training_ledger(
+        ledger_path, private_ledger_bytes(training)
+    )
     model_path = tmp_path / "model.joblib"
     joblib.dump(bundle, model_path)
     checksum = digest(model_path)
@@ -81,6 +86,8 @@ def prepare_files(tmp_path):
         "protocol_sha256": protocol_sha256(),
         "production_approved": False,
         "operator_signed": False,
+        "training_ledger_sha256": ledger_sha,
+        "training_unique": len(training),
     }))
     source_path = tmp_path / "labeled-canonical.jsonl"
     source_path.write_text("\n".join(
@@ -101,6 +108,7 @@ def evaluate_fixture(tmp_path, **changes):
         "canonical_labeled_path": target,
         "expected_target_sha256": digest(target),
         "source_attestation_path": att,
+        "private_training_ledger_path": tmp_path / "private-training-ledger.tsv",
     }
     values.update(changes)
     return evaluate(**values)
@@ -112,7 +120,9 @@ def test_no_external_research_result_is_ever_production_acceptance(tmp_path: Pat
     assert report["operational_ml_acceptance_demonstrated"] is False
     assert report["production_deployment_verified"] is False
     assert report["active_signed_artifact_equivalence_verified"] is False
-    assert report["training_test_cross_dataset_overlap_audited"] is False
+    assert report["training_test_cross_dataset_overlap_audited"] is True
+    assert report["training_ids_overlap"] == 0
+    assert report["normalized_flow_overlap"] == 0
     assert report["source_provenance"]["site_independence_verified"] is False
     assert report["target_unique_rows"] == 340
     assert report["evaluation"]["benign"] == 210
@@ -130,7 +140,8 @@ def test_tampering_model_detected_before_pickle_load(tmp_path: Path):
                  expected_bundle_sha256=expected,
                  canonical_labeled_path=target,
                  expected_target_sha256=digest(target),
-                 source_attestation_path=att)
+                 source_attestation_path=att,
+                 private_training_ledger_path=tmp_path / "private-training-ledger.tsv")
 
 
 def test_attestation_required_and_exposed_dataset_family_blocked(tmp_path: Path):
@@ -178,3 +189,33 @@ def test_source_file_does_not_implicitly_access_ton_or_accept_unpinned_pickle():
     assert "joblib.load" in path
     assert "ton-source.zip" not in path
     assert "production_deployment_verified" in path
+
+
+def test_source_fit_ledger_is_required_and_overlap_rejected(tmp_path: Path):
+    model, manifest, target, att, expected = prepare_files(tmp_path)
+    original = tmp_path / "private-training-ledger.tsv"
+    original.unlink()
+    with pytest.raises((FileNotFoundError, ValueError)):
+        evaluate(
+            trusted_bundle_path=model, manifest_path=manifest,
+            expected_bundle_sha256=expected, canonical_labeled_path=target,
+            expected_target_sha256=digest(target),
+            source_attestation_path=att,
+            private_training_ledger_path=original,
+        )
+
+
+def test_reused_training_flow_in_prospective_target_is_rejected(tmp_path: Path):
+    model, manifest, target, att, expected = prepare_files(tmp_path)
+    rows = target.read_text().splitlines()
+    rows[0] = fake(0, "benign").model_dump_json()
+    target.write_text("\n".join(rows) + "\n")
+    att.write_text(json.dumps(attest(digest(target))))
+    with pytest.raises(ValueError, match="overlaps prospective holdout"):
+        evaluate(
+            trusted_bundle_path=model, manifest_path=manifest,
+            expected_bundle_sha256=expected, canonical_labeled_path=target,
+            expected_target_sha256=digest(target),
+            source_attestation_path=att,
+            private_training_ledger_path=tmp_path / "private-training-ledger.tsv",
+        )
