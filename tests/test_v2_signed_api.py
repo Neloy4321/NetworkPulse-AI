@@ -76,12 +76,36 @@ def test_no_signed_runtime_instance_is_rejected():
 
 
 def test_unconfigured_or_development_production_entrypoint_fails_closed(monkeypatch):
-    from types import SimpleNamespace
-    from networkpulse.config import Settings
-    monkeypatch.setattr(Settings, "from_env", lambda: SimpleNamespace(
-        deployment_mode="development", auth_mode="local",
-    ))
+    monkeypatch.setenv("NETWORKPULSE_DEPLOYMENT", "development")
+    monkeypatch.setenv("NETWORKPULSE_AUTH_MODE", "local")
     with pytest.raises(ValueError, match="requires production OIDC"):
+        create_production_v2_app()
+
+
+def test_prod_factory_rejects_http_oidc_without_any_fake_signer(monkeypatch):
+    monkeypatch.setenv("NETWORKPULSE_DEPLOYMENT", "production")
+    monkeypatch.setenv("NETWORKPULSE_AUTH_MODE", "oidc")
+    monkeypatch.setenv("NETWORKPULSE_OIDC_ISSUER", "http://invalid-issuer")
+    monkeypatch.setenv("NETWORKPULSE_OIDC_JWKS_URL", "https://invalid-jwks")
+    monkeypatch.setenv("NETWORKPULSE_OIDC_AUDIENCE", "networkpulse")
+    with pytest.raises(ValueError, match="must use HTTPS"):
+        create_production_v2_app()
+
+
+def test_prod_factory_requires_private_artifact_and_actual_external_signer(monkeypatch):
+    monkeypatch.setenv("NETWORKPULSE_DEPLOYMENT", "production")
+    monkeypatch.setenv("NETWORKPULSE_AUTH_MODE", "oidc")
+    monkeypatch.setenv("NETWORKPULSE_OIDC_ISSUER", "https://example.org/issuer")
+    monkeypatch.setenv("NETWORKPULSE_OIDC_JWKS_URL", "https://example.org/jwks")
+    monkeypatch.setenv("NETWORKPULSE_OIDC_AUDIENCE", "networkpulse")
+    for key in (
+        "NETWORKPULSE_V2_ACTIVE_BUNDLE", "NETWORKPULSE_V2_FROZEN_MANIFEST",
+        "NETWORKPULSE_V2_SIGNED_APPROVAL",
+        "NETWORKPULSE_V2_OPERATOR_TRUST_STORE",
+        "NETWORKPULSE_V2_MODEL_SHA256",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    with pytest.raises(ValueError, match="Missing required V2 model"):
         create_production_v2_app()
 
 
