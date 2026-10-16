@@ -1,0 +1,19 @@
+# CI-private Alertmanager with authenticated in-network webhook only.
+global:
+  resolve_timeout: 1m
+route:
+  receiver: stage-c-private-webhook
+  group_by: ['alertname']
+  group_wait: 1s
+  group_interval: 2s
+  repeat_interval: 1m
+receivers:
+  - name: stage-c-private-webhook
+    webhook_configs:
+      - url: http://fixture:8080/webhook
+        send_resolved: true
+        max_alerts: 10
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /run/secrets/notification-token

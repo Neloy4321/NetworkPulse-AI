@@ -1,0 +1,120 @@
+name: Stage C real Prometheus Alertmanager webhook and silence CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'networkpulse/infra_stage_c_alert_fixture.py'
+      - 'networkpulse/infra_stage_c_alert_lab.py'
+      - 'tests/test_infra_stage_c_alerts.py'
+      - 'infra/prometheus/stage-c-ci.yml'
+      - 'infra/prometheus/stage-c-ci-alerts.yml'
+      - 'infra/alertmanager/stage-c-ci.yml'
+      - 'deploy/compose.infra-stage-c.ci.yml'
+      - '.github/workflows/stage-c-real-alert-delivery.yml'
+      - 'docs/STAGE_C_REAL_ALERT_DELIVERY_RUNBOOK.md'
+  push:
+    branches: [main]
+    paths:
+      - 'networkpulse/infra_stage_c_alert_fixture.py'
+      - 'networkpulse/infra_stage_c_alert_lab.py'
+      - 'tests/test_infra_stage_c_alerts.py'
+      - 'infra/prometheus/stage-c-ci.yml'
+      - 'infra/prometheus/stage-c-ci-alerts.yml'
+      - 'infra/alertmanager/stage-c-ci.yml'
+      - 'deploy/compose.infra-stage-c.ci.yml'
+      - '.github/workflows/stage-c-real-alert-delivery.yml'
+      - 'docs/STAGE_C_REAL_ALERT_DELIVERY_RUNBOOK.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-private-alert-delivery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      NP_STAGE_C_PROJECT: npstagec-${{ github.run_id }}
+      NETWORKPULSE_STAGE_C_CONFIRM: I_ACCEPT_DISPOSABLE_STAGE_C_ALERTS
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install tests and HTTP client
+        run: python -m pip install -e '.[dev]'
+      - name: Lint and verify synthetic auth and negative paths
+        run: |
+          python -m ruff check networkpulse/infra_stage_c_alert_fixture.py \
+            networkpulse/infra_stage_c_alert_lab.py tests/test_infra_stage_c_alerts.py
+          python -m compileall -q networkpulse/infra_stage_c_alert_fixture.py \
+            networkpulse/infra_stage_c_alert_lab.py
+          python -m pytest -v tests/test_infra_stage_c_alerts.py
+      - name: Create ephemeral per-run token, readable only by CI container UID
+        run: |
+          token=$(openssl rand -hex 32)
+          echo "::add-mask::$token"
+          echo "NETWORKPULSE_STAGE_C_TEST_TOKEN=$token" >> "$GITHUB_ENV"
+          file="$RUNNER_TEMP/networkpulse-stage-c-token-$GITHUB_RUN_ID"
+          (umask 077; printf '%s' "$token" > "$file")
+          sudo chown 65534:65534 "$file"
+          chmod 600 "$file" || true
+          echo "NETWORKPULSE_STAGE_C_TOKEN_FILE=$file" >> "$GITHUB_ENV"
+      - name: Verify native Prometheus and Alertmanager configuration
+        run: |
+          docker run --rm --entrypoint /bin/promtool \
+            -v "$PWD/infra/prometheus/stage-c-ci.yml:/etc/prometheus/prometheus.yml:ro" \
+            -v "$PWD/infra/prometheus/stage-c-ci-alerts.yml:/etc/prometheus/stage-c-ci-alerts.yml:ro" \
+            prom/prometheus:v2.55.1 check config /etc/prometheus/prometheus.yml
+          docker run --rm --entrypoint /bin/amtool \
+            -v "$PWD/infra/alertmanager/stage-c-ci.yml:/etc/alertmanager/alertmanager.yml:ro" \
+            -v "$NETWORKPULSE_STAGE_C_TOKEN_FILE:/run/secrets/notification-token:ro" \
+            prom/alertmanager:v0.28.1 check-config /etc/alertmanager/alertmanager.yml
+      - name: Start disposable Prometheus Alertmanager and private receiver
+        run: |
+          docker compose -p "$NP_STAGE_C_PROJECT" \
+            -f deploy/compose.infra-stage-c.ci.yml config --quiet
+          docker compose -p "$NP_STAGE_C_PROJECT" \
+            -f deploy/compose.infra-stage-c.ci.yml up -d
+      - name: Real alert firing authenticated delivery resolution and silence lifecycle
+        run: |
+          python -m networkpulse.infra_stage_c_alert_lab \
+            --project "$NP_STAGE_C_PROJECT" \
+            --report "$RUNNER_TEMP/stage-c-real-alert-evidence.json"
+      - name: Reject incomplete webhook delivery and fake operational acceptance
+        run: |
+          python - "$RUNNER_TEMP/stage-c-real-alert-evidence.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          data = json.loads(Path(sys.argv[1]).read_text())
+          assert data['status'] == 'passed'
+          assert data['operational_acceptance'] == 'NOT_CLAIMED'
+          assert data['human_acknowledgment'] == 'NOT_TESTED'
+          assert data['real_external_paging'] == 'NOT_TESTED'
+          for name in ('prometheus_alert_fired', 'alertmanager_firing_webhook_delivered',
+                       'resolved_webhook_delivered', 'webhook_bearer_auth_enforced',
+                       'unauthenticated_ack_rejected', 'synthetic_ack_recorded',
+                       'synthetic_ack_idempotent', 'alertmanager_silence_verified',
+                       'webhook_suppressed_while_silenced',
+                       'delivery_resumed_after_silence'):
+              assert data[name] is True, name
+          assert data['delivered_notification_records'] >= 4
+          print('Real disposable alert delivery/silence CI PASS; operator on-call not tested')
+          PY
+      - name: Upload metadata-only CI alert evidence (not token or payloads)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage-c-real-alert-delivery-${{ github.run_id }}
+          path: ${{ runner.temp }}/stage-c-real-alert-evidence.json
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Always destroy only disposable Stage C services and secret
+        if: always()
+        run: |
+          docker compose -p "$NP_STAGE_C_PROJECT" \
+            -f deploy/compose.infra-stage-c.ci.yml down --volumes --remove-orphans || true
+          rm -f -- "$NETWORKPULSE_STAGE_C_TOKEN_FILE" || true
