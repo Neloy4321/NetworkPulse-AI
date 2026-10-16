@@ -20,6 +20,7 @@ from networkpulse.evaluation.frozen_rf_research import (
     FIXED_CUTOFF, score_verified_bundle, verify_bundle_checksum,
 )
 from networkpulse.evaluation.unsw_to_toniot import digest, metrics, unique
+from networkpulse.generalization_evidence import load_training_keys, normalized_flow_fingerprint
 from networkpulse.schemas import FlowEvent
 
 MAX_ROWS = 300000
@@ -102,6 +103,7 @@ def evaluate(
     canonical_labeled_path: Path,
     expected_target_sha256: str,
     source_attestation_path: Path,
+    private_training_ledger_path: Path,
 ) -> dict:
     verify_bundle_checksum(trusted_bundle_path, expected_bundle_sha256)
     frozen = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -115,6 +117,12 @@ def evaluate(
     if (bundle.get("source_sha256") != frozen.get("source_zip_sha256") or
             bundle.get("protocol_sha256") != frozen.get("protocol_sha256")):
         raise ValueError("frozen source training protocol mismatch")
+    ledger_sha = frozen.get("training_ledger_sha256")
+    if not isinstance(ledger_sha, str):
+        raise ValueError("frozen research training ledger digest missing")
+    ledger = load_training_keys(private_training_ledger_path, ledger_sha)
+    if len(ledger.canonical_ids) != frozen.get("training_unique"):
+        raise ValueError("private source training ledger row count mismatch")
     attestation = json.loads(
         source_attestation_path.read_text(encoding="utf-8")
     )
@@ -125,6 +133,15 @@ def evaluate(
     events, duplicates = read_verified_canonical(
         canonical_labeled_path, expected_target_sha256
     )
+    if duplicates:
+        raise ValueError("prospective independent corpus contains duplicate flows")
+    overlap = sum(
+        e.key() in ledger.canonical_ids or
+        normalized_flow_fingerprint(e) in ledger.normalized_fingerprints
+        for e in events
+    )
+    if overlap:
+        raise ValueError("source training ledger overlaps prospective holdout")
     counts = Counter(e.label for e in events)
     if counts["benign"] < 200 or counts["anomaly"] < 100:
         raise ValueError("independent target needs >=200 benign and >=100 attack rows")
@@ -149,7 +166,10 @@ def evaluate(
         "operational_ml_acceptance_demonstrated": False,
         "production_deployment_verified": False,
         "active_signed_artifact_equivalence_verified": False,
-        "training_test_cross_dataset_overlap_audited": False,
+        "training_test_cross_dataset_overlap_audited": True,
+        "private_training_ledger_sha256": ledger_sha,
+        "training_ids_overlap": 0,
+        "normalized_flow_overlap": 0,
         "target_dataset_sha256": expected_target_sha256,
         "frozen_research_bundle_sha256": expected_bundle_sha256,
         "source_provenance": provenance,
@@ -159,7 +179,7 @@ def evaluate(
         "evaluation": results,
         "limitations": [
             "No independent trust anchor verifies provenance or label adjudication.",
-            "No private source-train flow ledger to test cross-dataset duplicate overlap.",
+            "Private hash ledger detects exact source overlap, but not transformed flow overlap.",
             "Independently operated site cannot be verified from an input JSON file.",
             "Result is research numeric quality only, never production acceptance.",
             "Research RF does not replace deployed native IsolationForest Detector.",
@@ -177,6 +197,7 @@ def main() -> int:
     parser.add_argument("--labeled-canonical-jsonl", type=Path, required=True)
     parser.add_argument("--expected-target-sha256", required=True)
     parser.add_argument("--source-attestation", type=Path, required=True)
+    parser.add_argument("--private-training-ledger", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.output.exists():
@@ -188,6 +209,7 @@ def main() -> int:
         canonical_labeled_path=args.labeled_canonical_jsonl,
         expected_target_sha256=args.expected_target_sha256,
         source_attestation_path=args.source_attestation,
+        private_training_ledger_path=args.private_training_ledger,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("x", encoding="utf-8") as handle:
