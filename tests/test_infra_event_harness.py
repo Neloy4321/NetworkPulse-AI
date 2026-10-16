@@ -132,7 +132,7 @@ def test_invalid_synthetic_payload_cannot_be_written_or_acknowledged(staging_lab
     })
     # Invalid synthetic payload remains pending: never mistake it for valid
     # processing or silently claim integrity PASS.
-    with pytest.raises(RuntimeError, match="cannot make forward progress"):
+    with pytest.raises(RuntimeError, match="pending failed deliveries"):
         h.drain()
     assert h.cache.xpending(h.stream, h.queue.group)["pending"] == 1
     assert not h.reconcile()["reconciled"]
