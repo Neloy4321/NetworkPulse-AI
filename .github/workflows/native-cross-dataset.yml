@@ -8,9 +8,13 @@ on:
       - 'networkpulse/evaluation/domain_shift_diagnostics.py'
       - 'networkpulse/evaluation/archive_members.py'
       - 'networkpulse/evaluation/live_unsw.py'
+      - 'networkpulse/evaluation/native_cross_dataset_sources.py'
+      - 'networkpulse/evaluation/private_r2_sources.py'
       - 'tests/test_archive_members.py'
       - 'tests/test_unsw_to_toniot.py'
       - 'tests/test_domain_shift_diagnostics.py'
+      - 'tests/test_native_cross_dataset_sources.py'
+      - 'tests/test_private_r2_sources.py'
   push:
     branches: [main]
     paths:
@@ -19,9 +23,13 @@ on:
       - 'networkpulse/evaluation/domain_shift_diagnostics.py'
       - 'networkpulse/evaluation/archive_members.py'
       - 'networkpulse/evaluation/live_unsw.py'
+      - 'networkpulse/evaluation/native_cross_dataset_sources.py'
+      - 'networkpulse/evaluation/private_r2_sources.py'
       - 'tests/test_archive_members.py'
       - 'tests/test_unsw_to_toniot.py'
       - 'tests/test_domain_shift_diagnostics.py'
+      - 'tests/test_native_cross_dataset_sources.py'
+      - 'tests/test_private_r2_sources.py'
   workflow_dispatch:
 permissions:
   contents: read
@@ -35,26 +43,24 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-      - name: Install native runtime and authorized downloader
-        run: python -m pip install -e '.[dev]' 'gdown>=5.2,<6'
+      - name: Install native runtime and authorized R2 client
+        run: python -m pip install -e '.[dev]' 'gdown>=5.2,<6' 'boto3>=1.34,<2'
       - name: Unit-test security and native adapter
-        run: python -m pytest -q tests/test_unsw_to_toniot.py tests/test_archive_members.py tests/test_domain_shift_diagnostics.py
-      - name: Download two authorized real source archives
-        run: |
-          python - <<'PY'
-          import gdown
-          from pathlib import Path
-          for file, fileid, size in (
-              ("unsw-source.zip", "16eIgENKYpiLwJNHZWRrYdPfGj6AOOtkT", 586382286),
-              ("ton-source.zip", "1rkNwQzrkpcnmtM8G5a-O7dAtr-y_9wFy", 3372478580),
-          ):
-              path=Path(file)
-              if not gdown.download(id=fileid,output=str(path),quiet=True,fuzzy=True):
-                  raise RuntimeError("Authorized source ZIP unavailable; no claim")
-              if path.stat().st_size != size:
-                  raise RuntimeError("Source size mismatch; no evaluation claim")
-          PY
+        run: python -m pytest -q tests/test_unsw_to_toniot.py tests/test_archive_members.py tests/test_domain_shift_diagnostics.py tests/test_native_cross_dataset_sources.py tests/test_private_r2_sources.py
+      - name: Download two authorized real source archives from private R2
+        id: fetch-sources
+        # Repository secrets are never supplied to pull requests from forks.
+        env:
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+        run: >
+          python -m networkpulse.evaluation.private_r2_sources
+          --status-report real-evidence/native-unsw-to-ton.json
+          --github-output "$GITHUB_OUTPUT"
       - name: Freeze source-only trained native Detector and evaluate TON holdout
+        if: steps.fetch-sources.outputs.ready == 'true'
         run: |
           python -m networkpulse.evaluation.unsw_to_toniot \
             --unsw-zip unsw-source.zip --ton-zip ton-source.zip \
@@ -70,3 +76,27 @@ jobs:
       - name: Remove raw network archives
         if: always()
         run: rm -f unsw-source.zip ton-source.zip
+      - name: Fail if predeclared research numerical gate fails
+        if: always() && steps.fetch-sources.outputs.ready == 'true'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("real-evidence/native-unsw-to-ton.json")
+          if not path.is_file():
+              raise SystemExit("Research evaluation evidence is missing; failing closed")
+          evidence = json.loads(path.read_text(encoding="utf-8"))
+          gate = evidence.get("evaluation", {}).get("operational_gate", {})
+          status = gate.get("status", "missing")
+          print(f"Research cross-dataset numeric gate: {status}")
+          print("Numeric metrics do not prove independent-site or production acceptance.")
+          if status != "passed":
+              raise SystemExit("Predeclared numeric quality gate FAILED")
+          PY
+      - name: Fail when authorized source archives are unavailable
+        if: always() && steps.fetch-sources.outputs.ready != 'true'
+        run: |
+          echo "Required source archives unavailable or failed integrity verification."
+          echo "Evaluation step did not run; failing required check."
+          exit 1
