@@ -1,0 +1,114 @@
+name: Stage B disposable non-ML PostgreSQL and Redis real restart drill
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'networkpulse/infra_stage_b_restart.py'
+      - 'tests/test_infra_stage_b_restart.py'
+      - '.github/workflows/stage-b-real-dependency-restart.yml'
+      - 'docs/STAGE_B_REAL_DEPENDENCY_RESTART_DRILL.md'
+  push:
+    branches: [main]
+    paths:
+      - 'networkpulse/infra_stage_b_restart.py'
+      - 'tests/test_infra_stage_b_restart.py'
+      - '.github/workflows/stage-b-real-dependency-restart.yml'
+      - 'docs/STAGE_B_REAL_DEPENDENCY_RESTART_DRILL.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  disposable-real-restart:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: stage-b-restart-${{ github.ref }}
+      cancel-in-progress: false
+    env:
+      NP_STAGE_B_PROJECT: npstageb-${{ github.run_id }}
+      NETWORKPULSE_STAGE_B_RESTART_CONFIRM: I_ACCEPT_DISPOSABLE_STAGE_B_RESTART
+      NETWORKPULSE_STAGE_B_REAL_CI: '1'
+      NETWORKPULSE_STAGE_B_CONFIRM: I_ACCEPT_ISOLATED_SYNTHETIC_STAGE_B
+      NETWORKPULSE_STAGING_MODE: non_ml_infrastructure_only
+      NETWORKPULSE_STAGING_DB_NAME: networkpulse_staging_infra
+      NETWORKPULSE_STAGING_DB_HOST: 127.0.0.1
+      NETWORKPULSE_STAGING_DB_PORT: '15432'
+      NETWORKPULSE_STAGING_REDIS_HOST: 127.0.0.1
+      NETWORKPULSE_STAGING_REDIS_PORT: '16379'
+      NETWORKPULSE_STAGING_OIDC_ISSUER: https://ci-invalid.example.test/issuer
+      NETWORKPULSE_STAGING_OIDC_JWKS_URL: https://ci-invalid.example.test/jwks
+      NETWORKPULSE_STAGING_OIDC_AUDIENCE: ci-not-an-idp
+      NETWORKPULSE_STAGING_DOMAIN: ci-invalid.example.test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install isolated PostgreSQL Redis and test dependencies
+        run: python -m pip install -e '.[dev,postgres,streaming]'
+      - name: Lint and compile restart code and safety tests
+        run: |
+          ruff check networkpulse/infra_stage_b_restart.py tests/test_infra_stage_b_restart.py
+          python -m compileall -q networkpulse/infra_stage_b_restart.py
+      - name: Verify fail-closed safety checks without Docker mutations
+        run: python -m pytest -v tests/test_infra_stage_b_restart.py
+      - name: Generate disposable per-run-only secrets
+        run: |
+          {
+            echo "NETWORKPULSE_STAGING_DB_PASSWORD=$(openssl rand -hex 24)"
+            echo "NETWORKPULSE_STAGING_REDIS_PASSWORD=$(openssl rand -hex 24)"
+          } >> "$GITHUB_ENV"
+      - name: Validate isolated Compose and start two disposable services
+        run: |
+          docker compose -p "$NP_STAGE_B_PROJECT" \
+            -f deploy/compose.infra-staging.yml \
+            -f deploy/compose.infra-stage-b.ci.yml config --quiet
+          docker compose -p "$NP_STAGE_B_PROJECT" \
+            -f deploy/compose.infra-staging.yml \
+            -f deploy/compose.infra-stage-b.ci.yml up -d db redis
+      - name: SIGKILL real PostgreSQL and Redis processes verify restart integrity
+        run: |
+          python -m networkpulse.infra_stage_b_restart \
+            --confirm-disposable-ci \
+            --project "$NP_STAGE_B_PROJECT" \
+            --report "$RUNNER_TEMP/stage-b-real-restart-evidence.json"
+      - name: Validate evidence explicitly excludes operational acceptance
+        run: |
+          python - "$RUNNER_TEMP/stage-b-real-restart-evidence.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          data = json.loads(Path(sys.argv[1]).read_text())
+          assert data['status'] == 'passed'
+          assert data['operational_acceptance'] == 'NOT_CLAIMED'
+          assert data['workload_kind'] == 'synthetic_non_ml_only'
+          assert data['redis_pending_after_restart'] == 13
+          assert data['reconciliation']['accepted_unique'] == 110
+          assert data['reconciliation']['db_unique'] == 110
+          assert data['reconciliation']['redis_stream_depth'] == 0
+          assert data['reconciliation']['redis_pending'] == 0
+          for service in ('postgres', 'redis'):
+              assert data[service]['stop_state_observed'] is True
+              assert data[service]['same_container_restarted'] is True
+              assert data[service]['restart_to_readiness_seconds'] > 0
+          print('Ephemeral non-ML real restart validation PASS; live deployment remains BLOCKED')
+          PY
+      - name: Store failure-or-success metadata-only evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage-b-real-restart-${{ github.run_id }}
+          path: ${{ runner.temp }}/stage-b-real-restart-evidence.json
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Stop only this disposable Compose project and delete its volumes
+        if: always()
+        run: |
+          docker compose -p "$NP_STAGE_B_PROJECT" \
+            -f deploy/compose.infra-staging.yml \
+            -f deploy/compose.infra-stage-b.ci.yml \
+            down --volumes --remove-orphans || true
