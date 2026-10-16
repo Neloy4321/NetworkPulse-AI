@@ -1,0 +1,118 @@
+name: Stage B encrypted PostgreSQL scratch recovery CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'networkpulse/infra_stage_b_encrypted_dr.py'
+      - 'tests/test_infra_stage_b_encrypted_dr.py'
+      - '.github/workflows/stage-b-encrypted-dr.yml'
+      - 'docs/STAGE_B_ENCRYPTED_DR_RUNBOOK.md'
+  push:
+    branches: [main]
+    paths:
+      - 'networkpulse/infra_stage_b_encrypted_dr.py'
+      - 'tests/test_infra_stage_b_encrypted_dr.py'
+      - '.github/workflows/stage-b-encrypted-dr.yml'
+      - 'docs/STAGE_B_ENCRYPTED_DR_RUNBOOK.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  encrypted-scratch-recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    env:
+      NP_STAGE_B_PROJECT: npstageb-${{ github.run_id }}
+      NETWORKPULSE_STAGE_B_DR_CONFIRM: I_ACCEPT_DISPOSABLE_ENCRYPTED_DR
+      NETWORKPULSE_STAGE_B_RESTART_CONFIRM: I_ACCEPT_DISPOSABLE_STAGE_B_RESTART
+      NETWORKPULSE_STAGE_B_CONFIRM: I_ACCEPT_ISOLATED_SYNTHETIC_STAGE_B
+      NETWORKPULSE_STAGING_MODE: non_ml_infrastructure_only
+      NETWORKPULSE_STAGING_DB_NAME: networkpulse_staging_infra
+      NETWORKPULSE_STAGING_DB_HOST: 127.0.0.1
+      NETWORKPULSE_STAGING_DB_PORT: '15432'
+      NETWORKPULSE_STAGING_REDIS_HOST: 127.0.0.1
+      NETWORKPULSE_STAGING_REDIS_PORT: '16379'
+      NETWORKPULSE_STAGING_OIDC_ISSUER: https://ci-invalid.example.test/issuer
+      NETWORKPULSE_STAGING_OIDC_JWKS_URL: https://ci-invalid.example.test/jwks
+      NETWORKPULSE_STAGING_OIDC_AUDIENCE: ci-not-an-idp
+      NETWORKPULSE_STAGING_DOMAIN: ci-invalid.example.test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install real PostgreSQL, Redis and Python crypto dependencies
+        run: |
+          python -m pip install -e '.[dev,postgres,streaming]'
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+          pg_dump --version
+          pg_restore --version
+      - name: Lint, compile and run crypto negative paths before Docker startup
+        run: |
+          ruff check networkpulse/infra_stage_b_encrypted_dr.py tests/test_infra_stage_b_encrypted_dr.py
+          python -m compileall -q networkpulse/infra_stage_b_encrypted_dr.py
+          python -m pytest -v tests/test_infra_stage_b_encrypted_dr.py
+      - name: Generate CI-only database, Redis and ephemeral encryption secrets
+        run: |
+          {
+            echo "NETWORKPULSE_STAGING_DB_PASSWORD=$(openssl rand -hex 24)"
+            echo "NETWORKPULSE_STAGING_REDIS_PASSWORD=$(openssl rand -hex 24)"
+            echo "NETWORKPULSE_STAGE_B_DR_KEY_HEX=$(openssl rand -hex 32)"
+          } >> "$GITHUB_ENV"
+      - name: Start separate isolated PostgreSQL and Redis with actual health checks
+        run: |
+          docker compose -p "$NP_STAGE_B_PROJECT" \
+            -f deploy/compose.infra-staging.yml \
+            -f deploy/compose.infra-stage-b.ci.yml config --quiet
+          docker compose -p "$NP_STAGE_B_PROJECT" \
+            -f deploy/compose.infra-staging.yml \
+            -f deploy/compose.infra-stage-b.ci.yml \
+            up -d --wait --wait-timeout 120 db redis
+      - name: Perform genuine encrypted pg_dump and clean scratch pg_restore
+        run: |
+          install -d -m 700 "$RUNNER_TEMP/networkpulse-stage-b-dr-$GITHUB_RUN_ID"
+          python -m networkpulse.infra_stage_b_encrypted_dr \
+            --confirm-disposable-ci \
+            --project "$NP_STAGE_B_PROJECT" \
+            --output-dir "$RUNNER_TEMP/networkpulse-stage-b-dr-$GITHUB_RUN_ID" \
+            --report "$RUNNER_TEMP/stage-b-encrypted-dr-evidence.json"
+      - name: Validate fail-closed, authenticated, complete restoration
+        run: |
+          python - "$RUNNER_TEMP/stage-b-encrypted-dr-evidence.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          data = json.loads(Path(sys.argv[1]).read_text())
+          assert data["status"] == "passed"
+          assert data["operational_acceptance"] == "NOT_CLAIMED"
+          assert data["rpo_rto_certification"] == "NOT_CLAIMED"
+          assert data["offsite_retention"] == "NOT_TESTED"
+          assert data["backup_algorithm"] == "AES-256-GCM"
+          assert data["encryption_authenticated"] is True
+          assert data["wrong_key_rejected"] and data["tamper_rejected"]
+          assert data["source_unique"] == data["restored_receipts"] == 180
+          assert data["verified"] is True
+          assert data["backup_seconds"] > 0 and data["restore_seconds"] > 0
+          print("Real isolated encrypted backup and PostgreSQL restore PASS; not production DR")
+          PY
+      - name: Upload redacted metadata-only DR evidence, never encryption keys or archives
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage-b-encrypted-dr-${{ github.run_id }}
+          path: ${{ runner.temp }}/stage-b-encrypted-dr-evidence.json
+          retention-days: 14
+          if-no-files-found: warn
+      - name: Remove transient plaintext and encrypted artifacts plus disposable CI volumes
+        if: always()
+        run: |
+          rm -rf -- "$RUNNER_TEMP/networkpulse-stage-b-dr-$GITHUB_RUN_ID"
+          docker compose -p "$NP_STAGE_B_PROJECT" \
+            -f deploy/compose.infra-staging.yml \
+            -f deploy/compose.infra-stage-b.ci.yml \
+            down --volumes --remove-orphans || true
