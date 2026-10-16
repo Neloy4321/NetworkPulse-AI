@@ -206,7 +206,7 @@ def test_model_tamper_rejected_before_deserialization(tmp_path: Path):
 
 def test_no_signature_no_release_and_no_unreviewed_untrusted_bytes(tmp_path: Path):
     path, meta, receipt, trust, sha = fixtures(tmp_path)
-    with pytest.raises(ValueError, match="out-of-band"):
+    with pytest.raises(ValueError, match="Out-of-band"):
         V2SignedRuntime.open(path, meta, receipt, trust, expected_sha256="unknown")
     missing = tmp_path/"no-receipt.json"
     with pytest.raises(ValueError, match="unavailable/invalid"):
