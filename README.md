@@ -37,11 +37,14 @@ Further research on the existing feature branch:
   private R2 downloads + fail-closed numerical research quality gate.
 - [PR #26](https://github.com/Neloy4321/NetworkPulse-AI/pull/26):
   source-only feature audit, supervised candidate comparisons and
-  **cross-capture stress**. Same-source grouped development looked optimistic
-  (RF v1 FPR 4.58% and recall 95.83%), but other captures yielded
-  **21.37%/21.07% benign FPR**. No winning model or signed artifact is
-  approved for promotion. Further research and untouched externally operated
-  labeled site validation are pending.
+  **cross-capture stress**. Capture-1-only RF training reached
+  **21.37%/21.07% false-positive rates** on UNSW 3/4. A subsequent
+  four-fold same-UNSW **Leave-One-Capture-Out** development experiment
+  (training on three captures) reported **0.83–2.54% FPR** with
+  **96.52–99.52% recall**; however, host-pair overlaps and the single
+  previously inspected lab make this **non-independent** research evidence.
+  No winning model or signed deployed artifact is approved for promotion.
+  See [independent acceptance evidence requirements](docs/P0_EXTERNAL_ACCEPTANCE_HOLDOUT_REQUEST.md).
 
 A green *research execution* check signifies credible measurement, **not**
 production IDS accuracy or acceptance. Stacked draft PRs are intentionally
