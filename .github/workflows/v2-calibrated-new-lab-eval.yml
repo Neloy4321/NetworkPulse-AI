@@ -8,6 +8,8 @@ on:
       - 'networkpulse/evaluation/v2_source_calibration.py'
       - 'tests/test_v2_source_calibration.py'
       - 'networkpulse/evaluation/v2_calibrated_new_lab_eval.py'
+      - 'networkpulse/evaluation/v2_predeclared_lab_eval.py'
+      - 'tests/test_v2_predeclared_lab_eval.py'
       - 'tests/test_v2_calibrated_new_lab_eval.py'
   workflow_dispatch:
 
