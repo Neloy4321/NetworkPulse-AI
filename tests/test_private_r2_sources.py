@@ -136,3 +136,15 @@ def test_transient_code_and_safe_error_without_sensitive_detail():
     error = TransientError("secret-access-key")
     assert _is_transient(error)
     assert _safe_error(error) == "TransientError: SlowDown"
+
+
+def test_workflow_uses_private_r2_and_fails_on_numeric_quality_gate():
+    workflow = (Path(__file__).resolve().parents[1] /
+                ".github/workflows/native-cross-dataset.yml").read_text(encoding="utf-8")
+    assert "networkpulse.evaluation.private_r2_sources" in workflow
+    assert "secrets.R2_ACCESS_KEY_ID" in workflow
+    assert "secrets.R2_SECRET_ACCESS_KEY" in workflow
+    assert "secrets.R2_ENDPOINT" in workflow
+    assert "Fail if predeclared research numerical gate fails" in workflow
+    assert 'if status != "passed":' in workflow
+    assert "Predeclared numeric quality gate FAILED" in workflow
