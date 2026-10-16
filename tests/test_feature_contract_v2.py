@@ -47,7 +47,7 @@ def test_zero_missing_flags_and_ratios_are_finite_in_dense_vector():
         orig_pkts=4, resp_pkts=8
     ))
     feat = features_v2(complete)
-    assert len(feat) == 20  # 16 numeric+missing flags, two one-hots
+    assert len(feat) == 18  # 16 numeric+missing flags, two one-hots
     assert all(type(v) is float for v in feat.values())
     assert all(v >= 0 for v in feat.values())
     assert feat["missing_duration"] == 0.0
