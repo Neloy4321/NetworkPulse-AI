@@ -142,7 +142,11 @@ class V2SignedRuntime:
         )
         if metadata.get("protocol_sha256") is None:
             raise ValueError("Frozen training protocol fingerprint missing")
-        # Only trusted out-of-band pinned and Ed25519-authorized bytes unpickle.
+        threshold = metadata["protocol"].get("threshold")
+        if (type(threshold) not in (int, float)
+                or not 0.05 <= threshold <= 0.95):
+            raise ValueError("Signed source-reviewed decision cutoff is invalid")
+        # SHA-pinned and Ed25519-authorized model bytes may now be unpickled.
         blob = joblib.load(model_path)
         if (blob.get("schema_version") != 2
                 or blob.get("research_only") is not True
@@ -150,8 +154,7 @@ class V2SignedRuntime:
                 or blob.get("feature_contract") != V2_FEATURE_CONTRACT
                 or blob.get("protocol_sha256") != metadata["protocol_sha256"]
                 or blob.get("scikit_learn_version") != sklearn.__version__
-                or blob.get("fixed_cutoff") != metadata["protocol"]["threshold"]
-                or blob.get("fixed_cutoff") != 0.5):
+                or blob.get("fixed_cutoff") != threshold):
             raise ValueError("Model runtime not equivalent to frozen V2 source contract")
         estimator = blob.get("estimator")
         if tuple(getattr(estimator, "classes_", ())) != (0, 1):
@@ -161,7 +164,7 @@ class V2SignedRuntime:
             release_quality=decision,
             vectorizer=blob["vectorizer"],
             estimator=estimator,
-            threshold=0.5,
+            threshold=float(threshold),
             signer_key_id=signed["signer_key_id"],
             _admission_token=_ADMISSION_TOKEN,
         )
