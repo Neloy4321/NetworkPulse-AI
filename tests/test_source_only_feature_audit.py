@@ -12,6 +12,8 @@ from networkpulse.evaluation.source_only_feature_audit import (
     feature_contract_audit,
     run,
     source_only_baseline,
+    source_only_grouped_baseline,
+    source_only_grouped_split,
     source_only_chronological_split,
 )
 from networkpulse.schemas import FlowEvent
@@ -123,3 +125,41 @@ def test_source_only_blocked_if_late_time_partition_lacks_benign_support():
     assert result["dev_class_counts"]["anomaly"] >= 400
     assert result["metrics"] is None
     assert result["strict_timestamp_separation"] is True
+
+
+def grouped_flow(i: int) -> FlowEvent:
+    event = flow(i)
+    payload = event.model_dump()
+    payload["src_ip"] = f"198.51.100.{1 + i % 250}"
+    payload["dst_ip"] = f"203.0.113.{1 + i // 250}"
+    return FlowEvent.model_validate(payload)
+
+
+def test_source_only_grouped_split_is_seeded_and_host_pair_disjoint():
+    events = [grouped_flow(i) for i in range(2200)]
+    fit, dev, excluded, groups = source_only_grouped_split(events)
+    fit2, dev2, _, _ = source_only_grouped_split(events)
+    assert excluded == 0
+    assert groups >= 200
+    assert [e.key() for e in fit] == [e.key() for e in fit2]
+    assert [e.key() for e in dev] == [e.key() for e in dev2]
+    keys = lambda items: {(str(e.src_ip), str(e.dst_ip), e.proto) for e in items}
+    assert keys(fit).isdisjoint(keys(dev))
+
+
+def test_grouped_baseline_is_research_only_without_external_gate():
+    result = source_only_grouped_baseline([grouped_flow(i) for i in range(2200)])
+    assert result["status"] == "source_only_grouped_development_measurement_not_acceptance"
+    assert result["host_pair_group_disjoint"] is True
+    assert result["strict_timestamp_separation"] is False
+    assert result["test_labels_used_to_fit"] is False
+    assert "operational_gate" not in result["metrics"]
+    assert result["metrics"]["benign"] >= 100
+    assert result["metrics"]["attack"] >= 100
+    assert "NOT a holdout used to claim production performance" in result["interpretation"]
+
+
+def test_grouped_baseline_fails_closed_without_sufficient_groups():
+    result = source_only_grouped_baseline([flow(i) for i in range(2200)])
+    assert result["status"] == "blocked_insufficient_source_host_pair_groups"
+    assert result["metrics"] is None
