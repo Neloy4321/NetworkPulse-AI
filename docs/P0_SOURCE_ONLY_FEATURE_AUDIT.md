@@ -9,8 +9,11 @@
 - Record member: **`UNSW-NB15_1.csv`** selected through the existing safe archive member resolver and parsed by `live_unsw.read_reservoir`. Entire member is scanned for input validation; deterministic uniform reservoir size **12,000**, seed **42**.
 - Never load TON, CIC, the exposed `Network_dataset_23.csv`, a production signed model, or unapproved dataset bytes for Stage 1.
 - Repo research feature contract version remains **1**, **no production-side feature changes**. The first baseline is exactly the existing native `IsolationForest` and `event_features`.
-- Source-only sample de-duplicates canonical event keys and adapter-invariant flow fingerprints before a **strict chronological 75%/25% fit/development boundary**. Rows sharing the boundary timestamp remain on one side. Internal benign fit/calibration of the source-fit portion is existing `train()`; model seed=42, benign calibration quantile=.995.
-- Dev predictions are reported with confusion counts and Wilson intervals as **descriptive source-only performance**, not external or P0 acceptance. Invalid or insufficient classes/chronology/source checksum fail closed.
+- Source-only sample de-duplicates canonical event keys and adapter-invariant flow fingerprints before two **distinct** development protocols (no model selection):
+  1. **Strict chronological 75/25** boundary: all equal timestamps on one side. The authentic first run has **2,986 benign and 0 attacks** in this late-time development segment, so a two-class FPR/recall benchmark is **blocked**. The explicit blocked status is preserved, not silently replaced by a result.
+  2. **Host-pair/protocol-group-disjoint 75/25** split: seed=42, distinct `(src_ip,dst_ip,proto)` grouping, assignment independent of labels, no shared group across source-fit/dev. It permits time overlap and is **same-source development only**, not temporal generalization or cross-site proof. It may also block for inadequate class support.
+- Both protocols keep the existing `train()` benign internal fit/calibration and fixed IsolationForest feature v1, seed=42 and calibration quantile=.995. When valid development labels exist, only aggregate descriptive FPR/recall metrics are reported, **never** operational acceptance.
+- Source ZIP size/SHA, group identity, chronology, minimum two-class support (100 benign and 100 attacks), and failure/blocked reasons are explicit gates. Training and evaluation are never tuned on TON or an external holdout.
 
 ## Initial feature audit questions
 
@@ -55,11 +58,12 @@ runs regression tests, preserves only the aggregate JSON report, and removes
 the ZIP at the end. GitHub Actions secrets are needed; forked/untrusted PRs
 cannot access them. Missing/failed evidence makes the job **red**, never green.
 
-Evidence fields: source SHA, selected row counts, excluded duplicates, exact
-chronological separation flag, fit and development population, native model
-feature version, calibration metadata, confusion matrix, FPR and recall
-intervals, sanitized feature summaries, Python/NumPy/scikit-learn versions
-and a stable SHA-256 of *protocol settings*. A timestamp stored in model
+Evidence fields: source SHA, selected row counts, excluded duplicates, strict
+chronological separation flag and blocked class-support counts, group-disjoint
+fit and development population, native model feature version, calibration
+metadata, confusion matrix, FPR and recall intervals when genuinely available,
+sanitized feature summaries, Python/NumPy/scikit-learn versions, and a stable
+SHA-256 of *protocol settings*. A timestamp stored in model
 metadata means binary model artifact hashes should **not** be assumed identical
 across runs; no production promotion takes place.
 
