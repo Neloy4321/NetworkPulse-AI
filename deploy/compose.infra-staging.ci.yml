@@ -1,0 +1,6 @@
+# CI-only synthetic OIDC (no real token) and ephemeral loopback probe.
+# NEVER use this override for a public or operator-owned staging server.
+services:
+  api:
+    ports:
+      - "127.0.0.1:18120:8000"
