@@ -1,0 +1,34 @@
+name: Signed V2 active-host probe contract tests (MOCKED not live)
+
+on:
+  pull_request:
+    branches: ['copilot/fix-native-cross-dataset-job']
+    paths:
+      - '.github/workflows/v2-signed-active-probe-tests.yml'
+      - 'networkpulse/evaluation/v2_signed_active_probe.py'
+      - 'tests/test_v2_signed_active_probe.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  strict-signed-remote-tls-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install dependency contract
+        run: python -m pip install -e '.[dev]'
+      - name: Lint live signed model verification probe
+        run: >-
+          python -m ruff check networkpulse/evaluation/v2_signed_active_probe.py
+          tests/test_v2_signed_active_probe.py
+      - name: Mock-only assert TLS, OIDC, model parity, no fake approval
+        run: python -m pytest -q tests/test_v2_signed_active_probe.py
+      - name: State limitation
+        run: echo 'Synthetic mock tests only. No real host, OIDC key or production sensor evidence.'
