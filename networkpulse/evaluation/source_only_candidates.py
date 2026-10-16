@@ -72,7 +72,8 @@ def fit_and_evaluate(fit, dev, *, candidate: str) -> dict:
            for label in ("benign", "anomaly")):
         raise ValueError("each source-only group partition needs >=100 per class")
     # Stronger than row de-dup: block any shared host-pair/protocol group.
-    group = lambda e: (str(e.src_ip), str(e.dst_ip), e.proto)
+    def group(e):
+        return (str(e.src_ip), str(e.dst_ip), e.proto)
     if {group(e) for e in fit} & {group(e) for e in dev}:
         raise ValueError("source-fit/dev host-pair/protocol group overlap")
     fit_keys = {e.key() for e in fit}
