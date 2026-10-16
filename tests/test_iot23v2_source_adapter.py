@@ -103,6 +103,7 @@ def test_complete_case_conversion_is_aggregate_only(tmp_path: Path):
     assert result["canonical_sha256"] == hashlib.sha256(output.read_bytes()).hexdigest()
     assert result["sensor_missing_values_were_imputed"] is False
     assert result["operational_ml_acceptance_demonstrated"] is False
+    assert output.stat().st_mode & 0o777 == 0o600
     assert "192.0.2." not in report.read_text()
     assert "198.51.100." not in report.read_text()
     canon = [json.loads(x) for x in output.read_text().splitlines()]
