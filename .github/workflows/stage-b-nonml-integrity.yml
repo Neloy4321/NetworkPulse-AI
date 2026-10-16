@@ -1,0 +1,111 @@
+name: Stage B isolated non-ML event integrity and bounded load
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'networkpulse/infra_event_harness.py'
+      - 'tests/test_infra_event_harness.py'
+      - 'deploy/compose.infra-stage-b.ci.yml'
+      - '.github/workflows/stage-b-nonml-integrity.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'networkpulse/infra_event_harness.py'
+      - 'tests/test_infra_event_harness.py'
+      - 'deploy/compose.infra-stage-b.ci.yml'
+      - '.github/workflows/stage-b-nonml-integrity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bounded-synthetic-integrity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NETWORKPULSE_STAGING_MODE: non_ml_infrastructure_only
+      NETWORKPULSE_STAGING_DB_NAME: networkpulse_staging_infra
+      NETWORKPULSE_STAGE_B_CONFIRM: I_ACCEPT_ISOLATED_SYNTHETIC_STAGE_B
+      NETWORKPULSE_STAGING_DB_HOST: 127.0.0.1
+      NETWORKPULSE_STAGING_DB_PORT: "15432"
+      NETWORKPULSE_STAGING_REDIS_HOST: 127.0.0.1
+      NETWORKPULSE_STAGING_REDIS_PORT: "16379"
+      NETWORKPULSE_STAGING_OIDC_ISSUER: https://ci-invalid.example.test/issuer
+      NETWORKPULSE_STAGING_OIDC_JWKS_URL: https://ci-invalid.example.test/jwks
+      NETWORKPULSE_STAGING_OIDC_AUDIENCE: ci-not-an-idp
+      NETWORKPULSE_STAGING_DOMAIN: ci-invalid.example.test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install PostgreSQL and Redis clients and tests
+        run: python -m pip install -e '.[dev,postgres,streaming]'
+      - name: Lint and compile harness
+        run: |
+          python -m ruff check networkpulse/infra_event_harness.py tests/test_infra_event_harness.py
+          python -m compileall -q networkpulse/infra_event_harness.py
+      - name: Verify fail-closed configuration
+        run: |
+          env -u NETWORKPULSE_STAGE_B_CONFIRM python -m pytest -q \
+            tests/test_infra_event_harness.py -k 'refuses_nonisolated or percentile'
+      - name: Generate ephemeral CI-only credentials
+        run: |
+          {
+            echo "NETWORKPULSE_STAGING_DB_PASSWORD=$(openssl rand -hex 24)"
+            echo "NETWORKPULSE_STAGING_REDIS_PASSWORD=$(openssl rand -hex 24)"
+          } >> "$GITHUB_ENV"
+      - name: Start isolated PostgreSQL and Redis
+        run: |
+          docker compose -f deploy/compose.infra-staging.yml \
+            -f deploy/compose.infra-stage-b.ci.yml config --quiet
+          docker compose -f deploy/compose.infra-staging.yml \
+            -f deploy/compose.infra-stage-b.ci.yml up -d db redis
+          for i in $(seq 1 30); do
+            if docker compose -f deploy/compose.infra-staging.yml \
+              -f deploy/compose.infra-stage-b.ci.yml exec -T db \
+              pg_isready -U networkpulse_staging -d networkpulse_staging_infra \
+              >/dev/null 2>&1; then
+              break
+            fi
+            sleep 2
+          done
+      - name: Real Redis/PG backpressure, replay and failure integration
+        env:
+          NETWORKPULSE_STAGE_B_REAL_CI: "1"
+        run: python -m pytest -v tests/test_infra_event_harness.py
+      - name: Generate bounded synthetic measurement artifact
+        run: |
+          python -m networkpulse.infra_event_harness \
+            --events 300 --max-backlog 100 --cleanup \
+            > "$RUNNER_TEMP/stage-b-synthetic-observation.json"
+          python -m json.tool "$RUNNER_TEMP/stage-b-synthetic-observation.json" >/dev/null
+          python - "$RUNNER_TEMP/stage-b-synthetic-observation.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          data = json.loads(Path(sys.argv[1]).read_text())
+          assert data["reconciled"] is True
+          assert data["accepted_unique"] == data["db_unique"] == 300
+          assert data["redis_pending"] == data["redis_stream_depth"] == 0
+          assert data["latency_sample_count"] == 300
+          assert data["operational_acceptance"] == "NOT_CLAIMED"
+          print("Ephemeral infrastructure observation PASS; not a field SLO")
+          PY
+      - name: Preserve metadata-only CI observation
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage-b-nonml-synthetic-${{ github.run_id }}
+          path: ${{ runner.temp }}/stage-b-synthetic-observation.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Remove disposable CI services and volumes
+        if: always()
+        run: |
+          docker compose -f deploy/compose.infra-staging.yml \
+            -f deploy/compose.infra-stage-b.ci.yml \
+            down --volumes --remove-orphans || true
