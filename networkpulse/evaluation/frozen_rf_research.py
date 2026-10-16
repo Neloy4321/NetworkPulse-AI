@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import platform
 import zipfile
 from collections import Counter
@@ -29,6 +30,7 @@ from networkpulse.evaluation.source_only_loco import (
     MEMBERS, MEMBER_SEEDS, SAMPLE_PER_MEMBER,
 )
 from networkpulse.evaluation.unsw_to_toniot import UNSW_SHA, digest, unique
+from networkpulse.generalization_evidence import normalized_flow_fingerprint
 from networkpulse.features import FEATURE_VERSION
 
 # Explicit researcher selection after *exposed* source-only development.
@@ -38,6 +40,30 @@ from networkpulse.features import FEATURE_VERSION
 SELECTED = "rf_supervised_port_buckets_no_state"
 RESEARCH_CONTRACT = "supervised_port_bucket_no_state_v1"
 RESEARCH_BUNDLE_SCHEMA = 1
+
+def private_ledger_bytes(rows) -> bytes:
+    # Identifiers are hashed, but still potentially re-identifiable; never publish.
+    pairs = sorted((event.key(), normalized_flow_fingerprint(event)) for event in rows)
+    if not pairs or len({key for key, _ in pairs}) != len(pairs):
+        raise ValueError("source training flow ledger contains duplicate IDs")
+    return "".join(f"{key}\t{fp}\n" for key, fp in pairs).encode("utf-8")
+
+
+def write_private_training_ledger(path: Path, content: bytes) -> str:
+    """Create-only, mode 0600. Restricted ledger is NEVER a public artifact."""
+    if path.exists():
+        raise ValueError("restricted training ledger already exists")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(fd, "wb") as output:
+            output.write(content)
+            output.flush()
+            os.fsync(output.fileno())
+    except Exception:
+        path.unlink(missing_ok=True)
+        raise
+    return hashlib.sha256(content).hexdigest()
 
 
 def fixed_protocol() -> dict:
@@ -138,6 +164,7 @@ def fit_from_approved_source(path: Path):
         "estimator": model,
     }
     # No flow-level IP/UID/row data are serialized to the bundle.
+    ledger = private_ledger_bytes(selected)
     manifest = {
         "schema_version": 1,
         "status": "source_only_supervised_research_bundle_frozen",
@@ -154,6 +181,7 @@ def fit_from_approved_source(path: Path):
         "source_scans": capture_scans,
         "training_sample_before_dedup": len(records),
         "training_unique": len(selected),
+        "training_ledger_sha256": hashlib.sha256(ledger).hexdigest(),
         "duplicates_excluded": dropped,
         "training_class_counts": {
             "benign": counts["benign"], "anomaly": counts["anomaly"]
@@ -166,8 +194,8 @@ def fit_from_approved_source(path: Path):
             "joblib": joblib.__version__,
         },
         "training_dataset_row_ledger": (
-            "not_exported: raw network identifiers and normalized fingerprints "
-            "must be stored in a separately access-controlled source ledger"
+            "RESTRICTED SHA-pinned canonical key and normalized flow fingerprint TSV; "
+            "never upload to public GitHub Actions artifacts"
         ),
         "limitations": [
             "All four previously exposed controlled UNSW captures used for training.",
@@ -178,7 +206,7 @@ def fit_from_approved_source(path: Path):
             "No deployment, production false-positive or operator review evidence.",
         ],
     }
-    return bundle, manifest, selected[:32]
+    return bundle, manifest, selected
 
 
 def score_verified_bundle(bundle: dict, events) -> np.ndarray:
@@ -214,12 +242,17 @@ def verify_bundle_checksum(path: Path, expected_sha256: str) -> str:
     return actual
 
 
-def run(unsw_zip: Path, loco_report: Path, destination: Path, report_path: Path) -> dict:
-    if destination.exists() or report_path.exists():
+def run(unsw_zip: Path, loco_report: Path, destination: Path, report_path: Path,
+        ledger_path: Path) -> dict:
+    if destination.exists() or report_path.exists() or ledger_path.exists():
         raise ValueError("refuse to replace existing research bundle or manifest")
     loco = json.loads(loco_report.read_text(encoding="utf-8"))
     validate_loco_result(loco)
-    bundle, manifest, selftest = fit_from_approved_source(unsw_zip)
+    bundle, manifest, selected = fit_from_approved_source(unsw_zip)
+    selftest = selected[:32]
+    ledger_sha = write_private_training_ledger(ledger_path, private_ledger_bytes(selected))
+    if ledger_sha != manifest["training_ledger_sha256"]:
+        raise ValueError("reconstructed training ledger digest mismatch")
     destination.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(bundle, destination, compress=3)
     file_sha = digest(destination)
@@ -253,8 +286,10 @@ def main() -> int:
     parser.add_argument("--loco-report", type=Path, required=True)
     parser.add_argument("--bundle", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
+    parser.add_argument("--private-ledger", type=Path, required=True)
     args = parser.parse_args()
-    manifest = run(args.unsw_zip, args.loco_report, args.bundle, args.manifest)
+    manifest = run(args.unsw_zip, args.loco_report, args.bundle,
+                   args.manifest, args.private_ledger)
     print(json.dumps({
         "status": manifest["status"],
         "bundle_sha256": manifest["bundle_sha256"],
