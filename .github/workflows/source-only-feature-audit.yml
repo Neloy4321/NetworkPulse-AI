@@ -96,6 +96,7 @@ jobs:
           --loco-report real-evidence/source-only-loco.json
           --bundle research-private/frozen-source-rf-research-only.joblib
           --manifest real-evidence/frozen-source-rf-manifest.json
+          --private-ledger research-private/source-training-ledger.tsv
       - name: Verify frozen research bundle SHA and provenance without unpickling
         run: |
           python - <<'PY'
@@ -107,6 +108,15 @@ jobs:
           verify_bundle_checksum(bundle, manifest["bundle_sha256"])
           assert manifest["selected_candidate"] == SELECTED
           assert manifest["training_unique"] >= 1000
+          from networkpulse.generalization_evidence import load_training_keys
+          ledger = load_training_keys(
+              Path("research-private/source-training-ledger.tsv"),
+              manifest["training_ledger_sha256"],
+          )
+          assert len(ledger.canonical_ids) == manifest["training_unique"]
+          assert len(ledger.normalized_fingerprints) >= 1000
+          print("Restricted source-flow leakage ledger verified; never uploading ledger")
+
           assert manifest["production_approved"] is False
           assert manifest["operator_signed"] is False
           assert manifest["independent_site_evaluated"] is False
@@ -136,7 +146,7 @@ jobs:
           if-no-files-found: error
       - name: Remove research-only model from ephemeral runner
         if: always()
-        run: rm -f research-private/frozen-source-rf-research-only.joblib
+        run: rm -f research-private/frozen-source-rf-research-only.joblib research-private/source-training-ledger.tsv
       - name: Remove restricted raw source archive
         if: always()
         run: rm -f unsw-source.zip
