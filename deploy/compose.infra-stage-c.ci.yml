@@ -1,0 +1,46 @@
+# CI-only synthetic stack, isolated from all production/ML services.
+# Every published port is loopback only.
+services:
+  fixture:
+    image: python:3.12-alpine
+    user: "65534:65534"
+    command: ["python", "-u", "/opt/stage-c/fixture.py"]
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    pids_limit: 64
+    volumes:
+      - ../networkpulse/infra_stage_c_alert_fixture.py:/opt/stage-c/fixture.py:ro
+      - ${NETWORKPULSE_STAGE_C_TOKEN_FILE:?Ephemeral token file required}:/run/secrets/notification-token:ro
+    environment:
+      NETWORKPULSE_STAGE_C_TOKEN_FILE: /run/secrets/notification-token
+      PYTHONDONTWRITEBYTECODE: "1"
+    ports: ["127.0.0.1:19871:8080"]
+    networks: [stage_c_private]
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    user: "65534:65534"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/tmp/stage-c-prom
+      - --storage.tsdb.retention.time=1h
+    volumes:
+      - ../infra/prometheus/stage-c-ci.yml:/etc/prometheus/prometheus.yml:ro
+      - ../infra/prometheus/stage-c-ci-alerts.yml:/etc/prometheus/stage-c-ci-alerts.yml:ro
+    ports: ["127.0.0.1:19090:9090"]
+    depends_on: [fixture, alertmanager]
+    networks: [stage_c_private]
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    user: "65534:65534"
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/tmp/stage-c-am
+    volumes:
+      - ../infra/alertmanager/stage-c-ci.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ${NETWORKPULSE_STAGE_C_TOKEN_FILE:?Ephemeral token file required}:/run/secrets/notification-token:ro
+    ports: ["127.0.0.1:19093:9093"]
+    depends_on: [fixture]
+    networks: [stage_c_private]
+networks:
+  stage_c_private: {}
