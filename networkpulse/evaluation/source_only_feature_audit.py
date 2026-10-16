@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import json
 import platform
+import random
 import re
 import zipfile
 from collections import Counter
@@ -71,6 +72,95 @@ def source_only_chronological_split(events):
         raise ValueError("source fit/dev canonical ID overlap")
     return fit, dev, excluded
 
+
+
+
+def source_only_grouped_split(events):
+    """Seeded host-pair/protocol-disjoint 75/25 *development* split.
+
+    Grouping keys are used only in memory; network host identities never appear
+    in artifacts. Groups are assigned independently of labels or model scores.
+    This is NOT chronological or cross-site generalization evidence.
+    """
+    if not events:
+        raise ValueError("source-only sample is empty")
+    if any(e.source != "canonical" or e.label not in {"benign", "anomaly"} for e in events):
+        raise ValueError("authentic labeled canonical source flows are required")
+    unique_flows, excluded = unique(events)
+    groups = {}
+    for event in unique_flows:
+        group = (str(event.src_ip), str(event.dst_ip), event.proto)
+        groups.setdefault(group, []).append(event)
+    keys = sorted(groups)
+    if len(keys) < 8:
+        raise ValueError("insufficient independent source host-pair groups")
+    random.Random(SAMPLE_SEED).shuffle(keys)
+    split = max(1, int(len(keys) * 0.25))
+    dev_group_keys = set(keys[:split])
+    fit, dev = [], []
+    for key, rows in groups.items():
+        (dev if key in dev_group_keys else fit).extend(rows)
+    if len(fit) < _MIN_FIT or len(dev) < _MIN_DEV:
+        raise ValueError("insufficient source-only group-disjoint populations")
+    if {(str(e.src_ip), str(e.dst_ip), e.proto) for e in fit} & {
+        (str(e.src_ip), str(e.dst_ip), e.proto) for e in dev
+    }:
+        raise ValueError("host-pair group overlap in source-only benchmark")
+    return fit, dev, excluded, len(keys)
+
+
+def source_only_grouped_baseline(events):
+    """Unchanged v1 model, with host-pair-disjoint source-only dev groups."""
+    try:
+        fit, dev, removed, group_count = source_only_grouped_split(events)
+    except ValueError as exc:
+        return {
+            "status": "blocked_insufficient_source_host_pair_groups",
+            "reason": str(exc),
+            "metrics": None,
+        }
+    dev_classes = Counter(e.label for e in dev)
+    if dev_classes["benign"] < 100 or dev_classes["anomaly"] < 100:
+        return {
+            "status": "blocked_insufficient_grouped_dev_class_support",
+            "dev_class_counts": {
+                "benign": dev_classes["benign"], "anomaly": dev_classes["anomaly"]
+            },
+            "required_per_class": 100,
+            "group_count": group_count,
+            "metrics": None,
+        }
+    trained = train(
+        fit, quantile=TRAIN_QUANTILE, seed=SAMPLE_SEED,
+        source="UNSW_real_grouped_source_only_research_baseline",
+    )
+    result = metrics(dev, trained.score(dev))
+    result.pop("operational_gate", None)
+    return {
+        "status": "source_only_grouped_development_measurement_not_acceptance",
+        "method": "unchanged_native_isolation_forest_feature_v1",
+        "fit_rows": len(fit),
+        "dev_rows": len(dev),
+        "dev_class_counts": {
+            "benign": dev_classes["benign"], "anomaly": dev_classes["anomaly"]
+        },
+        "total_host_pair_protocol_groups": group_count,
+        "duplicate_events_removed": removed,
+        "host_pair_group_disjoint": True,
+        "strict_timestamp_separation": False,
+        "timestamp_overlap_allowed": True,
+        "model_feature_version": trained.metadata["feature_version"],
+        "threshold_source": "fit_only_internal_benign_calibration",
+        "model_quantile": TRAIN_QUANTILE,
+        "model_seed": SAMPLE_SEED,
+        "test_labels_used_to_fit": False,
+        "metrics": result,
+        "interpretation": (
+            "Same-source host-pair/protocol-disjoint development; groups do not "
+            "prove independent networks, chronological validity or acceptance. "
+            "NOT a holdout used to claim production performance."
+        ),
+    }
 
 def _summary_numeric(values):
     data = np.asarray(values, dtype=float)
@@ -203,6 +293,7 @@ def run(path: Path, *, cap: int = SAMPLE_CAP) -> dict:
         raise ValueError("source archive changed during feature audit")
     audit = feature_contract_audit(sample)
     benchmark = source_only_baseline(sample)
+    grouped = source_only_grouped_baseline(sample)
     params = {
         "source_zip_sha256": UNSW_SHA,
         "source_member": SOURCE_MEMBER,
@@ -232,11 +323,13 @@ def run(path: Path, *, cap: int = SAMPLE_CAP) -> dict:
         "archive_scan": scan_info,
         "feature_contract_audit": audit,
         "source_only_baseline": benchmark,
+        "source_only_grouped_baseline": grouped,
         "limitations": [
             "Source-only chronology is not independent physical-site generalization.",
             "Reservoir sampling can alter natural prevalence and capture coverage.",
             "Wilson uncertainty assumes independent flows and is optimistic for correlated traffic.",
             "Native feature contract is unchanged; proposed v2 changes are not validated.",
+            "Group-disjoint development is within one source capture, not a new site.",
             "The source-only sample has not been used to pick a production model.",
             "No previously inspected TON target outcomes influenced this benchmark.",
             "Version reporting supports replication but packages are not fully locked.",
@@ -262,9 +355,14 @@ def main() -> int:
         "fit": report["source_only_baseline"]["fit_rows"],
         "development": report["source_only_baseline"]["dev_rows"],
         "benchmark_status": report["source_only_baseline"]["status"],
-        "development_fpr": (
+        "chronological_development_fpr": (
             report["source_only_baseline"]["metrics"]["fpr"]
             if report["source_only_baseline"]["metrics"] is not None else None
+        ),
+        "grouped_benchmark_status": report["source_only_grouped_baseline"]["status"],
+        "grouped_development_fpr": (
+            report["source_only_grouped_baseline"]["metrics"]["fpr"]
+            if report["source_only_grouped_baseline"]["metrics"] is not None else None
         ),
         "operational_acceptance_demonstrated": False,
     }, sort_keys=True))
