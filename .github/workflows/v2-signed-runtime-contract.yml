@@ -1,0 +1,46 @@
+name: V2 signed model operational admission (synthetic signature fixtures ONLY)
+
+on:
+  pull_request:
+    branches: ['copilot/fix-native-cross-dataset-job']
+    paths:
+      - '.github/workflows/v2-signed-runtime-contract.yml'
+      - 'networkpulse/v2_signed_runtime.py'
+      - 'networkpulse/v2_signed_api.py'
+      - 'networkpulse/release_approval.py'
+      - 'networkpulse/feature_contract_v2.py'
+      - 'tests/test_v2_signed_runtime.py'
+      - 'tests/test_v2_signed_api.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-only-signature-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install runtime plus testing dependencies
+        run: python -m pip install -e '.[dev]'
+      - name: Lint candidate release gate
+        run: >-
+          python -m ruff check
+          networkpulse/v2_signed_runtime.py
+          networkpulse/v2_signed_api.py
+          tests/test_v2_signed_runtime.py
+          tests/test_v2_signed_api.py
+      - name: Verify signed model contract rejects invalid evidence
+        run: python -m pytest -q tests/test_v2_signed_runtime.py tests/test_v2_signed_api.py
+      - name: Confirm NO real production-signing keys or service are claimed
+        run: |
+          echo "Only EPHEMERAL TEST-ONLY Ed25519 keys generated inside pytest."
+          echo "No real independent site, signed production artifact or deployment proven."
+
+# Green CI validates CODE correctness only; the actual P0 quality and deployment
+# gates require real, separately operated evidence and out-of-band human keys.

@@ -1,0 +1,41 @@
+# TEMPLATE: NOT a live deployment or trusted operator signoff.
+# Bind loopback only; put this behind REAL operator-hosted TLS ingress.
+services:
+  signed-v2-api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.signed-v2
+    image: networkpulse-signed-v2:operator-review
+    restart: "no"
+    init: true
+    read_only: true
+    user: "10001:10001"
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 1536m
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+    ports:
+      - "127.0.0.1:${NETWORKPULSE_V2_HOST_PORT:-8200}:8200"
+    environment:
+      NETWORKPULSE_DEPLOYMENT: production
+      NETWORKPULSE_AUTH_MODE: oidc
+      NETWORKPULSE_OIDC_ISSUER: ${NETWORKPULSE_OIDC_ISSUER:?Real HTTPS issuer required}
+      NETWORKPULSE_OIDC_AUDIENCE: ${NETWORKPULSE_OIDC_AUDIENCE:?Real audience required}
+      NETWORKPULSE_OIDC_JWKS_URL: ${NETWORKPULSE_OIDC_JWKS_URL:?Real HTTPS JWKS required}
+      NETWORKPULSE_OIDC_ROLE_CLAIM: ${NETWORKPULSE_OIDC_ROLE_CLAIM:-networkpulse_role}
+      NETWORKPULSE_V2_ACTIVE_BUNDLE: /run/networkpulse/model.joblib
+      NETWORKPULSE_V2_FROZEN_MANIFEST: /run/networkpulse/manifest.json
+      NETWORKPULSE_V2_SIGNED_APPROVAL: /run/networkpulse/approval.json
+      NETWORKPULSE_V2_OPERATOR_TRUST_STORE: /run/networkpulse/trust.json
+      NETWORKPULSE_V2_MODEL_SHA256: ${NETWORKPULSE_V2_MODEL_SHA256:?Operator-reviewed SHA256 required}
+    volumes:
+      - ${NETWORKPULSE_V2_RELEASE_DIR:?Operator-controlled read-only model mount required}:/run/networkpulse:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8200/health/ready',timeout=2)"]
+      interval: 20s
+      timeout: 4s
+      retries: 3
+      start_period: 30s
