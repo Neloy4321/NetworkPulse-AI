@@ -132,6 +132,28 @@ def feature_contract_audit(events):
 
 def source_only_baseline(events):
     fit, dev, removed = source_only_chronological_split(events)
+    class_counts = Counter(event.label for event in dev)
+    # This source's temporally late capture can contain almost one class.
+    # Do NOT fabricate class balance or score a one-class dev set as a benchmark.
+    if class_counts["benign"] < 100 or class_counts["anomaly"] < 100:
+        return {
+            "status": "blocked_insufficient_chronological_dev_class_support",
+            "fit_rows": len(fit), "dev_rows": len(dev),
+            "dev_class_counts": {
+                "benign": class_counts["benign"],
+                "anomaly": class_counts["anomaly"],
+            },
+            "required_per_class": 100,
+            "duplicate_events_removed": removed,
+            "strict_timestamp_separation": (
+                max(x.timestamp for x in fit) < min(x.timestamp for x in dev)
+            ),
+            "metrics": None,
+            "interpretation": (
+                "No valid two-class source-only development benchmark; "
+                "no acceptance metric, threshold tuning, resampling or leakage workaround."
+            ),
+        }
     # Predeclare a single unchanged model, its quantile, seed and feature contract.
     # The fit partition itself is internally split by train() for fit/calibration.
     trained = train(
@@ -196,7 +218,7 @@ def run(path: Path, *, cap: int = SAMPLE_CAP) -> dict:
     ).hexdigest()
     return {
         "schema_version": 1,
-        "status": "source_only_audit_and_baseline_completed",
+        "status": "source_only_feature_audit_completed",
         "research_only": True,
         "operational_acceptance_demonstrated": False,
         "source": "UNSW-NB15 authorized raw archive; earlier capture only",
@@ -239,7 +261,11 @@ def main() -> int:
         "sample": report["archive_scan"]["selected_before_dedup"],
         "fit": report["source_only_baseline"]["fit_rows"],
         "development": report["source_only_baseline"]["dev_rows"],
-        "development_fpr": report["source_only_baseline"]["metrics"]["fpr"],
+        "benchmark_status": report["source_only_baseline"]["status"],
+        "development_fpr": (
+            report["source_only_baseline"]["metrics"]["fpr"]
+            if report["source_only_baseline"]["metrics"] is not None else None
+        ),
         "operational_acceptance_demonstrated": False,
     }, sort_keys=True))
     return 0
