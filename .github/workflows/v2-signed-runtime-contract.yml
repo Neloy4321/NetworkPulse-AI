@@ -6,9 +6,11 @@ on:
     paths:
       - '.github/workflows/v2-signed-runtime-contract.yml'
       - 'networkpulse/v2_signed_runtime.py'
+      - 'networkpulse/v2_signed_api.py'
       - 'networkpulse/release_approval.py'
       - 'networkpulse/feature_contract_v2.py'
       - 'tests/test_v2_signed_runtime.py'
+      - 'tests/test_v2_signed_api.py'
   workflow_dispatch:
 
 permissions:
@@ -30,9 +32,11 @@ jobs:
         run: >-
           python -m ruff check
           networkpulse/v2_signed_runtime.py
+          networkpulse/v2_signed_api.py
           tests/test_v2_signed_runtime.py
+          tests/test_v2_signed_api.py
       - name: Verify signed model contract rejects invalid evidence
-        run: python -m pytest -q tests/test_v2_signed_runtime.py
+        run: python -m pytest -q tests/test_v2_signed_runtime.py tests/test_v2_signed_api.py
       - name: Confirm NO real production-signing keys or service are claimed
         run: |
           echo "Only EPHEMERAL TEST-ONLY Ed25519 keys generated inside pytest."
