@@ -6,6 +6,8 @@ The calling deployment must provide real OIDC verifier + trusted signer keys.
 """
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import Protocol
 
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -78,3 +80,44 @@ def create_signed_v2_app(*, runtime: V2SignedRuntime,
         }
 
     return app
+
+
+
+def create_production_v2_app() -> FastAPI:
+    """Uvicorn --factory entrypoint, never accepts synthetic/local development mode.
+
+    The operator MUST mount private model/approval/Ed25519 public trust store
+    and provision a real OIDC issuer. Source code does not contain keys.
+    """
+    from networkpulse.config import Settings
+    from networkpulse.security.oidc import TokenVerifier
+
+    settings = Settings.from_env()
+    if settings.deployment_mode != "production" or settings.auth_mode != "oidc":
+        raise ValueError("Actual signed V2 deployment requires production OIDC mode")
+    if not str(settings.oidc_issuer).startswith("https://"):
+        raise ValueError("Production OIDC issuer must use HTTPS")
+    if not str(settings.oidc_jwks_url).startswith("https://"):
+        raise ValueError("Production OIDC JWKS must use HTTPS")
+    required = (
+        "NETWORKPULSE_V2_ACTIVE_BUNDLE",
+        "NETWORKPULSE_V2_FROZEN_MANIFEST",
+        "NETWORKPULSE_V2_SIGNED_APPROVAL",
+        "NETWORKPULSE_V2_OPERATOR_TRUST_STORE",
+        "NETWORKPULSE_V2_MODEL_SHA256",
+    )
+    options = {name: os.environ.get(name) for name in required}
+    if any(not options[name] for name in required):
+        raise ValueError("Missing required V2 model/signature/operator trust configuration")
+    runtime = V2SignedRuntime.open(
+        Path(options["NETWORKPULSE_V2_ACTIVE_BUNDLE"]),
+        Path(options["NETWORKPULSE_V2_FROZEN_MANIFEST"]),
+        Path(options["NETWORKPULSE_V2_SIGNED_APPROVAL"]),
+        Path(options["NETWORKPULSE_V2_OPERATOR_TRUST_STORE"]),
+        expected_sha256=options["NETWORKPULSE_V2_MODEL_SHA256"],
+    )
+    verifier = TokenVerifier(
+        settings.oidc_issuer, settings.oidc_audience,
+        settings.oidc_jwks_url, settings.oidc_role_claim,
+    )
+    return create_signed_v2_app(runtime=runtime, verifier=verifier)
