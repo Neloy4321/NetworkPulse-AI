@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from networkpulse.schemas import FlowEvent
+from networkpulse.feature_contract_v2 import FlowV2, from_zeek_v2, from_suricata_v2
 
 
 class SkipRecord(Exception):
@@ -100,5 +101,39 @@ def iter_jsonl(path: Path, fmt: str) -> Iterator[FlowEvent]:
                 yield parse(value, fmt)
             except SkipRecord:
                 continue
+            except (ValueError, KeyError, TypeError) as exc:
+                raise ValueError(f"{path}:{lineno}: {exc}") from exc
+
+
+
+def parse_v2(record: dict[str, Any], fmt: str) -> FlowV2:
+    """Explicit opt-in to lossless missingness-aware version 2 only."""
+    if fmt == "zeek":
+        return from_zeek_v2(record)
+    if fmt == "suricata":
+        return from_suricata_v2(record)
+    if fmt == "canonical":
+        value = FlowV2.model_validate(record)
+        if value.source == "canonical":
+            return value
+        raise ValueError("canonical V2 record must retain canonical source")
+    raise ValueError("V2 format must be zeek, suricata or canonical")
+
+
+def iter_jsonl_v2(path: Path, fmt: str) -> Iterator[FlowV2]:
+    """Opt-in V2 parser; existing v1 ingest remains backward compatible."""
+    with path.open("rt", encoding="utf-8") as stream:
+        for lineno, line in enumerate(stream, 1):
+            if not line.strip():
+                continue
+            if len(line) > 1_000_000:
+                raise ValueError(f"{path}:{lineno}: record too large")
+            try:
+                row = json.loads(line)
+                if not isinstance(row, dict):
+                    raise ValueError("expected JSON object")
+                if fmt == "suricata" and row.get("event_type") != "flow":
+                    continue
+                yield parse_v2(row, fmt)
             except (ValueError, KeyError, TypeError) as exc:
                 raise ValueError(f"{path}:{lineno}: {exc}") from exc

@@ -1,0 +1,18 @@
+# Signed V2 operator-staging image. Pin base-image digest for real release.
+FROM python:3.12-slim AS builder
+ENV PIP_NO_CACHE_DIR=1
+WORKDIR /build
+COPY pyproject.toml README.md ./
+COPY networkpulse/ ./networkpulse/
+RUN python -m venv /opt/np-v2 && /opt/np-v2/bin/pip install --no-cache-dir . 'scikit-learn==1.9.1'
+
+FROM python:3.12-slim AS inference
+ENV PATH="/opt/np-v2/bin:$PATH" PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 HOME="/app"
+WORKDIR /app
+COPY --from=builder /opt/np-v2 /opt/np-v2
+COPY networkpulse/ ./networkpulse/
+RUN groupadd --system --gid 10001 npv2 && useradd --system --uid 10001 --gid 10001 --home /app npv2 && chown -R npv2:npv2 /app
+USER 10001:10001
+EXPOSE 8200
+# Trust material is NEVER baked into the image.
+CMD ["uvicorn", "networkpulse.v2_signed_api:create_production_v2_app", "--factory", "--host", "0.0.0.0", "--port", "8200", "--no-access-log"]
