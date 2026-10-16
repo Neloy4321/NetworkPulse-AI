@@ -1,6 +1,6 @@
 # IoT-23v2 real uploaded Zeek capture — 2026-10-16 external research audit
 
-**Status: NUMERICAL NO-GO (preliminary local runtime); P0 operational acceptance NOT DEMONSTRATED.**
+**Status: NUMERICAL NO-GO VERIFIED IN ORIGINAL MODEL RUNTIME; P0 operational acceptance NOT DEMONSTRATED.**
 
 The user's authentic publicly distributed, originally labeled
 `CTU-IoT-Malware-Capture-34-1` IoT-23v2 Zeek TSV file was received
@@ -105,3 +105,55 @@ Research evaluations must be reported with entire-capture missingness,
 capture/day correlation and observed failure modes; never replace
 malicious labels, fabricate network counters or cherry-pick only good
 source results.
+
+
+## VERIFIED exact-version freeze/target recheck: 2026-10-16
+
+The public IoT-23v2 original was independently fetched inside the GitHub
+Actions source-only research runner and its bytes/size verified against
+the **exact user-uploaded SHA-256 before reading flow content**. The previously
+frozen source-trained RF was rebuilt from the identical approved UNSW archive.
+Model SHA remained
+`ba5fbc2cb171b0f79a31d99e71fbe438135325babc9d939d26c8589f66ff954b`,
+the restricted 23,551-row source identity ledger was regenerated and its SHA
+checked, and **zero canonical/fingerprint training-test overlaps** were found.
+
+**Full authentic execution**
+[GitHub Actions run 38901875043](https://github.com/Neloy4321/NetworkPulse-AI/actions/runs/38901875043)
+**SUCCEEDED with 85 focused tests + Ruff**. Aggregate-only evidence artifact:
+**12046232907**, file `iot23v2-exposed-recheck.json`.
+
+Model was scored in the **exact original model training runtime**
+(Python 3.12.15, scikit-learn 1.9.1). It confirmed the preliminary local
+confusion matrix **exactly**:
+
+| Actual \ Predicted | Benign | Anomaly |
+| --- | ---: | ---: |
+| Benign | TN **856** | FP **147** |
+| Malicious | FN **4,316** | TP **2** |
+
+- Benign **observed FPR = 14.6560%**; 95% Wilson CI **12.6022%–16.9796%**;
+  max permitted 95% upper **5%**: **FAIL**.
+- Attack **observed recall = 0.0463%**; 95% Wilson CI
+  **0.0127%–0.1687%**; required 95% lower **80%**: **FAIL**.
+- **77.01%** of original flow rows cannot be scored using the required
+  unmodified sensor feature contract. The remaining 5,321 rows may not be
+  representative: this result only describes the complete-case population.
+- Original source attack labels have not been independently re-adjudicated;
+  same operator/site provenance and signing/deployment remain unverified.
+- IoT-23v2 is now exposed development/research evidence, **not** a pristine
+  prospective holdout for a future model candidate.
+
+**Interpretation:** With unmodified source-only frozen RF weights and
+cutoff 0.5, **the cross-dataset laboratory test really fails**. A green
+GitHub job proves faithful measurement and integrity—not network ML
+acceptance. No score-driven tuning, post-hoc threshold optimization or
+retroactive pass criterion is allowed. An engineered, versioned
+missing-value-aware production feature contract and a new source-side
+training/generalization strategy are necessary BEFORE reserving another
+unseen site/dataset for independent acceptance. Moreover, operational
+production signoff requires an actual signed active compatible model,
+site/day/analyst review, latency/alert workload and lawful operator evidence.
+
+The older **preliminary local-runtime** section remains above as historical
+context only; this section supersedes its dependency-warning limitation.
