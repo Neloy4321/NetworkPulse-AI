@@ -389,3 +389,66 @@ captured with the same family of tools; this is **not real production
 or independently operated field validation**. Old exposed TON is
 excluded throughout the experiment. A new untouched external dataset
 and actual deployed/signed model evidence are still required.
+
+
+## Stage 4 executed — four-fold capture-diverse exposed-source development
+
+[Authentic GitHub Actions run 38888374360](https://github.com/Neloy4321/NetworkPulse-AI/actions/runs/38888374360),
+aggregate-only artifact **12041067773**: **Ruff passed, 55 focused tests
+passed**, private UNSW SHA-256 source verified, 4-fold LOCO completed.
+
+The original `rf_supervised_v1` candidate (160 trees, fixed 0.5 cutoff)
+with each excluded part unseen *during that fold's fitting*:
+
+| Excluded part | Test benign | Test attacks | TN | FP | FN | TP | FPR | FPR Wilson upper 95% | Recall | Recall Wilson lower 95% | Shared FIT/DEV host-pair groups |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| UNSW 1 | 5,783 | 201 | 5,735 | 48 | 7 | 194 | 0.8300% | 1.0987% | 96.5174% | 92.9871% | 270 |
+| UNSW 2 | 5,531 | 425 | 5,466 | 65 | 3 | 422 | 1.1752% | 1.4950% | 99.2941% | 97.9455% | 276 |
+| UNSW 3 | 4,557 | 1,261 | 4,454 | 103 | 6 | 1,255 | 2.2603% | 2.7337% | 99.5242% | 98.9658% | 291 |
+| UNSW 4 | 4,686 | 1,107 | 4,567 | 119 | 10 | 1,097 | 2.5395% | 3.0303% | 99.0967% | 98.3452% | 289 |
+
+The port-bucket/no-state candidate also numerically passed each
+exposed-source fold: FPR **0.8473%, 1.2475%, 2.2164%, 2.5181%**,
+recall **97.5124%, 99.0588%, 99.4449%, 99.1870%**, respectively;
+its worst observed FPR upper 95% **3.0071%**. Its no-state encoding may be
+worth a future *prospective* compatibility investigation, but the results
+here are **not proof** of cross-sensor transfer.
+
+Training on **three source captures** instead of one substantially
+improves same-UNSW capture-to-capture false alarm resilience:
+Stage 3 capture-1-only research models exceeded 21% observed FPR on
+parts 3 and 4, while 3-to-1 LOCO RF v1 achieved 2.2603% and 2.5395%
+on those corresponding excluded parts. **This is a conditional comparison
+between differing training protocols and samples, not a causal proof or
+an untouched external independent validation.**
+
+**Critical test limitations:**
+- Each FIT/DEV fold shares **270–291 host-pair/protocol groups**, despite
+  exact de-duplication (16, 44, 182, 207 target duplicates excluded).
+  Common topology, lab behavior and instrument calibration can substantially
+  inflate apparent transfer.
+- All four raw CSV parts are from the **same controlled UNSW testbed**;
+  every part has already been exposed in earlier development/diagnostics.
+- Each fold draws a fixed 6,000-row uniform reservoir from each member;
+  source imbalance and correlated flows imply optimistic Wilson intervals.
+- This experiment is supervised RandomForest research and cannot establish
+  equivalence to the still-unsupervised deployed native `Detector`.
+- There has been **no automatically selected winning candidate**, frozen
+  signed artifact, independently operated new field holdout or deployment
+  proof. The originally exposed TON experiment still failed its FPR gate.
+
+Stage 4 protocol digest:
+`873a1f53db9d26e017c99b1d8be1cd726e18313a730d71bf417300d8251f0164`.
+
+**Next disciplined move:** Treat all four UNSW members and exposed TON as
+**development/diagnostic only**, preregister an external untouched field
+validation plan, and *only then* choose a source-fit candidate and freeze
+reproducible model/configuration, training/overlap ledger and immutable
+artifact for one-shot out-of-domain evaluation. For a research-level
+next-domain check, Stratosphere Laboratory's official
+[IoT-23](https://www.stratosphereips.org/datasets-iot23) separately
+publishes labeled Zeek flows, but its captured IoT scenarios are
+**also controlled-lab networks, not audited production SOC deployments**.
+Original label semantics and lawful access/usage must be checked before
+any download or acceptance claim. Actual field deployment and signed
+active-model equivalence remain a distinct unsatisfied requirement.
