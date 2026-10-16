@@ -23,7 +23,13 @@ jobs:
           import hashlib
           import re
           from urllib.request import Request, urlopen
-          from networkpulse.evaluation.v2_calibrated_new_lab_eval import CAPTURES
+          # Standard library ONLY: avoid importing model packages or reading raw IPs.
+          CAPTURES = {
+              "CTU-IoT-Malware-Capture-42-1":
+                  "2019-01-10-14-34-38-192.168.1.197-zeek-conn-log.labeled",
+              "CTU-Honeypot-Capture-4-1":
+                  "2018-10-25-14-06-32-192.168.1.132-zeek-conn.log.labeled",
+          }
           root="https://mcfp.felk.cvut.cz/publicDatasets/IoT-23-Dataset-v2/"
           for capture, filename in CAPTURES.items():
               with urlopen(Request(root+capture+"/"+filename,headers={
