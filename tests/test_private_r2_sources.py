@@ -138,13 +138,17 @@ def test_transient_code_and_safe_error_without_sensitive_detail():
     assert _safe_error(error) == "TransientError: SlowDown"
 
 
-def test_workflow_uses_private_r2_and_fails_on_numeric_quality_gate():
+def test_integrated_source_only_workflow_uses_r2_without_false_quality_promotion():
+    # The failed native TON numerical acceptance run remains a draft check;
+    # the integrated source-only research CI must fail closed on incomplete
+    # source/evaluation evidence and may NEVER claim a P0 production PASS.
     workflow = (Path(__file__).resolve().parents[1] /
-                ".github/workflows/native-cross-dataset.yml").read_text(encoding="utf-8")
+                ".github/workflows/source-only-feature-audit.yml").read_text(encoding="utf-8")
     assert "networkpulse.evaluation.private_r2_sources" in workflow
     assert "secrets.R2_ACCESS_KEY_ID" in workflow
     assert "secrets.R2_SECRET_ACCESS_KEY" in workflow
     assert "secrets.R2_ENDPOINT" in workflow
-    assert "Fail if predeclared research numerical gate fails" in workflow
-    assert 'if status != "passed":' in workflow
-    assert "Predeclared numeric quality gate FAILED" in workflow
+    assert "Fail when source-only audit is unavailable" in workflow
+    assert "Unexpected operational acceptance claim: FAIL" in workflow
+    assert "Unverified production model acceptance must not proceed" in workflow
+    assert "Research-only model freeze complete; INDEPENDENT SITE NOT VALIDATED" in workflow
