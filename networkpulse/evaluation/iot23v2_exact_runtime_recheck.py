@@ -9,7 +9,6 @@ and label-dependent; results cannot stand for the complete capture.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import tempfile
 from pathlib import Path
