@@ -1,0 +1,50 @@
+name: Signed V2 secure container build preflight (NOT active deployment)
+
+on:
+  pull_request:
+    branches: ['copilot/fix-native-cross-dataset-job']
+    paths:
+      - '.github/workflows/v2-signed-container-preflight.yml'
+      - 'deploy/Dockerfile.signed-v2'
+      - 'deploy/compose.signed-v2.yml'
+      - 'networkpulse/v2_signed_api.py'
+      - 'networkpulse/v2_signed_runtime.py'
+      - 'pyproject.toml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unauthenticated-boot-refusal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify container build without secrets/signing keys
+        run: docker build --file deploy/Dockerfile.signed-v2 --tag networkpulse-v2:unsigned-build-test .
+      - name: Verify image never invents a production approval
+        run: |
+          docker run --rm --network none networkpulse-v2:unsigned-build-test python - <<'PY'
+          from networkpulse.v2_signed_api import create_production_v2_app
+          try:
+              create_production_v2_app()
+          except ValueError as exc:
+              assert "requires production OIDC" in str(exc), str(exc)
+              print("PASS: unsigned, unauthenticated container refused to start as production")
+          else:
+              raise SystemExit("FAIL: unsigned release started without real OIDC/signature")
+          PY
+      - name: Verify no secrets or model files built into image
+        run: |
+          docker run --rm --network none networkpulse-v2:unsigned-build-test             python -c "from pathlib import Path; assert not Path('/run/networkpulse/model.joblib').exists(); assert not Path('/run/networkpulse/trust.json').exists(); print('Image contains no active signed model or operator keys')"
+      - name: Verify secure Compose template demands external real credentials
+        run: |
+          if docker compose -f deploy/compose.signed-v2.yml config > /dev/null 2>&1; then
+            echo "Error: Compose resolved without operator provisioned credentials"; exit 1
+          fi
+          echo "PASS: no operator identity/trust config -> deployment blocked"
+      - name: Record image digest and truthful status
+        run: |
+          docker image inspect networkpulse-v2:unsigned-build-test --format '{{.Id}}'
+          echo 'BUILT only: not pushed, not signed, not deployed, no independent site evidence'
