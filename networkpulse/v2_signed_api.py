@@ -89,16 +89,22 @@ def create_production_v2_app() -> FastAPI:
     The operator MUST mount private model/approval/Ed25519 public trust store
     and provision a real OIDC issuer. Source code does not contain keys.
     """
-    from networkpulse.config import Settings
     from networkpulse.security.oidc import TokenVerifier
 
-    settings = Settings.from_env()
-    if settings.deployment_mode != "production" or settings.auth_mode != "oidc":
+    # This isolated bearer-token service does NOT have the main browser UI,
+    # so legacy browser-PKCE/DB/Redis config must not be required here.
+    # Nonetheless ONLY genuine production + HTTPS OIDC configurations pass.
+    if (os.getenv("NETWORKPULSE_DEPLOYMENT") != "production"
+            or os.getenv("NETWORKPULSE_AUTH_MODE") != "oidc"):
         raise ValueError("Actual signed V2 deployment requires production OIDC mode")
-    if not str(settings.oidc_issuer).startswith("https://"):
-        raise ValueError("Production OIDC issuer must use HTTPS")
-    if not str(settings.oidc_jwks_url).startswith("https://"):
-        raise ValueError("Production OIDC JWKS must use HTTPS")
+    issuer = os.getenv("NETWORKPULSE_OIDC_ISSUER", "")
+    jwks_url = os.getenv("NETWORKPULSE_OIDC_JWKS_URL", "")
+    audience = os.getenv("NETWORKPULSE_OIDC_AUDIENCE", "")
+    role_claim = os.getenv("NETWORKPULSE_OIDC_ROLE_CLAIM", "networkpulse_role")
+    if not issuer.startswith("https://") or not jwks_url.startswith("https://"):
+        raise ValueError("Production OIDC issuer and JWKS must use HTTPS")
+    if not audience or not role_claim:
+        raise ValueError("Production OIDC audience/role claim are required")
     required = (
         "NETWORKPULSE_V2_ACTIVE_BUNDLE",
         "NETWORKPULSE_V2_FROZEN_MANIFEST",
@@ -116,8 +122,5 @@ def create_production_v2_app() -> FastAPI:
         Path(options["NETWORKPULSE_V2_OPERATOR_TRUST_STORE"]),
         expected_sha256=options["NETWORKPULSE_V2_MODEL_SHA256"],
     )
-    verifier = TokenVerifier(
-        settings.oidc_issuer, settings.oidc_audience,
-        settings.oidc_jwks_url, settings.oidc_role_claim,
-    )
+    verifier = TokenVerifier(issuer, audience, jwks_url, role_claim)
     return create_signed_v2_app(runtime=runtime, verifier=verifier)
