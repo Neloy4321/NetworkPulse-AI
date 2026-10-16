@@ -170,3 +170,52 @@ candidate freeze must separately document grouped/temporal support, training
 ledger, reproducibility, production contract integration, and a genuinely
 untouched independently operated and labeled external capture. Old exposed
 TON test results cannot steer model selection.
+
+
+## Executed Stage 2 source-only supervised experiment (2026-10-16)
+
+**Authentic GitHub Actions evidence:** [Run 38883010531](https://github.com/Neloy4321/NetworkPulse-AI/actions/runs/38883010531),
+artifact **12038905079** (aggregate files `source-only-feature-audit.json`
+and `source-only-candidates.json`; no raw traffic or model artifacts uploaded).
+Ruff checks passed and **33 focused tests passed**. Private R2 pinned UNSW
+source bytes were verified before either research run.
+
+The fixed source-only split has **45,717 FIT** records (44,373 benign,
+1,344 attack) and **12,993 DEV** records (12,729 benign, 264 attack)
+across **420 host-pair/protocol groups**. Same capture and possibly
+overlapping times: **not an independent site, not a temporal holdout**.
+
+| Predeclared candidate | TN | FP | FN | TP | Observed FPR | 95% FPR upper | Recall | 95% recall lower |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Existing unsupervised IsolationForest v1 (Stage 1 reference) | 12,567 | 162 | 245 | 19 | 1.2727% | 1.4826% | 7.1970% | 4.6555% |
+| Supervised RF using current v1 features | 12,146 | 583 | 11 | 253 | 4.5801% | 4.9572% | 95.8333% | 92.6942% |
+| Supervised RF with port buckets and no sensor state | 12,105 | 624 | 13 | 251 | 4.9022% | 5.2911% | 95.0758% | 91.7586% |
+
+The *source-only* v1 RF candidate crosses the **numerical** FPR/recall
+confidence-bound criteria on this **development dataset only**. The
+sensor-state-ablated RF **does not** meet the source-only 5% FPR upper bound.
+This is neither prospective statistical generalization nor permission to
+claim an operational ML acceptance PASS. In particular, supervised v1 RF
+raises observed false alarms from 162 to **583 among 12,729 benign** compared
+with the original low-recall IF baseline. This source-side tradeoff
+requires analysis before any deployment.
+
+**Reproducibility:** Stage 2 protocol SHA-256
+`503a18093068bee388185d3b1efd4a8346cc10df4bafa571cc6148b4599d8faa`,
+UNSW source ZIP SHA-256
+`3c7500f120405b21b44a2bf05134f49491f88a655ae3091fc1b269c4c9ece79a`.
+The fixed research candidates, source-only grouped fit/dev partition and
+threshold=0.5 are specified in code; no model is saved as a deployable or
+signed artifact, no winner is automatically selected, and TON was not
+used in development.
+
+**Next gate before any model freeze:** establish documented event/counter
+semantics and source-only multi-capture/day or independently operated
+group validation, stress-test class prevalence and false-alert burden,
+and decide a *single* candidate only under a preregistered and reproducible
+source-development selection protocol. Then freeze its artifact and training
+ledger **before** acquiring/scoring a genuinely untouched external dataset.
+The previous exposed TON `Network_dataset_23.csv` cannot validate a new
+candidate as untouched. Signed active-model equivalence, deployment
+reliability and operator-reviewed production false-alert burden are still
+unproven. P0 Operational ML Acceptance remains **NOT DEMONSTRATED**.
