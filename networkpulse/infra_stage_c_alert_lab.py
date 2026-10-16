@@ -8,7 +8,6 @@ import argparse
 import json
 import os
 import re
-import socket
 import stat
 import subprocess
 import time
@@ -73,7 +72,7 @@ def _until(label: str, callback, *, seconds: float = 45):
 def _api(client: httpx.Client, method: str, url: str, **kwargs):
     response = client.request(method, url, **kwargs)
     response.raise_for_status()
-    return response.json()
+    return response.json() if response.content else {}
 
 
 def _receipts(client: httpx.Client, token: str) -> list[dict]:
