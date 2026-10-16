@@ -53,7 +53,8 @@ def source_split(rows: list[FlowV2]):
         raise ValueError("unlabeled flow in supervised source development")
     train = [e for e in rows if not is_calibration(e)]
     calibration = [e for e in rows if is_calibration(e)]
-    by_group = lambda e: (str(e.src_ip), str(e.dst_ip), e.proto)
+    def by_group(e):
+        return (str(e.src_ip), str(e.dst_ip), e.proto)
     # Ensure ALL host/protocol groups, not just rows, are disjoint.
     if {by_group(e) for e in train} & {by_group(e) for e in calibration}:
         raise ValueError("source development group leakage")
