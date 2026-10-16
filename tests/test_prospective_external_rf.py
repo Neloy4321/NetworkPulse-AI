@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import joblib
-import numpy as np
 import pytest
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_extraction import DictVectorizer
