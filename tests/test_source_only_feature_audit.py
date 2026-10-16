@@ -110,3 +110,16 @@ def test_workflow_never_uses_ton_for_source_only_selection():
     assert "OneDrive_1_9-14-2026.zip" not in workflow
     assert "ton-source.zip" not in workflow
     assert "Fail when source-only audit is unavailable" in workflow
+
+
+def test_source_only_blocked_if_late_time_partition_lacks_benign_support():
+    events = [
+        flow(i, label="anomaly" if i >= 1600 else ("benign" if i % 2 == 0 else "anomaly"))
+        for i in range(2200)
+    ]
+    result = source_only_baseline(events)
+    assert result["status"] == "blocked_insufficient_chronological_dev_class_support"
+    assert result["dev_class_counts"]["benign"] == 0
+    assert result["dev_class_counts"]["anomaly"] >= 400
+    assert result["metrics"] is None
+    assert result["strict_timestamp_separation"] is True
