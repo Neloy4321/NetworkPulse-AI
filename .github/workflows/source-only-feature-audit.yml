@@ -75,7 +75,7 @@ jobs:
           if not path.is_file():
               raise SystemExit("Source-only audit evidence unavailable: FAIL")
           report = json.loads(path.read_text(encoding="utf-8"))
-          if report.get("status") != "source_only_audit_and_baseline_completed":
+          if report.get("status") != "source_only_feature_audit_completed":
               raise SystemExit("Invalid source-only audit status: FAIL")
           if report.get("operational_acceptance_demonstrated") is not False:
               raise SystemExit("Unexpected operational acceptance claim: FAIL")
@@ -83,5 +83,10 @@ jobs:
               "strict_timestamp_separation", False
           ):
               raise SystemExit("Source-only chronology not verified: FAIL")
-          print("Source-only research audit completed; no operational ML acceptance claim")
+          benchmark = report.get("source_only_baseline", {})
+          if benchmark.get("status") != "source_only_development_measurement_not_acceptance":
+              print(f"Audit completed; benchmark BLOCKED: {benchmark.get('status')}")
+              print(f"Chronological dev class counts: {benchmark.get('dev_class_counts')}")
+              raise SystemExit("No supported two-class source-only baseline: FAIL")
+          print("Source-only baseline available; still NOT operational ML acceptance")
           PY
