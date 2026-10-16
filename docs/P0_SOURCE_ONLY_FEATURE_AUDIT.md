@@ -129,3 +129,44 @@ benign-fit calibration semantics from UNSW source documentation, then
 pre-register *few* alternative versioned candidate representations without
 using exposed TON outcomes for selection. A new untouched external labeled
 capture is still necessary to make a credible independent acceptance claim.
+
+
+## Pre-registered Stage 2 supervised research candidates — before authentic execution
+
+**Change in learning regime:** The existing native IsolationForest remains untouched
+and is still the shipped *unsupervised* detector. Because Stage 1 source-only
+host-pair-disjoint development recall was 19/264 = 7.197%, Stage 2
+investigates two **supervised alternatives** using genuine source-fit labels.
+These are research-only estimators, **not drop-in Detector replacements**.
+
+Candidate names and fixed source-only protocol:
+
+- `rf_supervised_v1`: sklearn `RandomForestClassifier` with current
+  `event_features` v1 and `DictVectorizer` fitted on source FIT only.
+- `rf_supervised_port_buckets_no_state`: same estimator, but keep existing
+  numeric behavioral features and protocol indicators; drop numeric `dst_port`,
+  `dst_is_well_known` and all sensor-specific `state=...` features. Use
+  one-hot port class `well_known` (0..1023), `registered` (1024..49151),
+  `dynamic` (49152..65535). No invented state translation.
+
+Both candidates: `n_estimators=160`, `max_depth=12`,
+`min_samples_leaf=10`, `class_weight="balanced_subsample"`,
+`random_state=42`, `n_jobs=1`. Classify at fixed probability **0.5**;
+do not optimize thresholds on development labels. Report all candidates,
+confusion matrices, FPR, recall, Wilson intervals, class support, source hash
+and protocol digest. **Do not automatically select a winner or promote a model.**
+
+Use the exact pinned UNSW archive and `UNSW-NB15_1.csv`, full CSV scan,
+seeded **60,000** row reservoir (seed 42), de-duplicated existing
+host-pair/protocol-group-disjoint 75/25 FIT/DEV split. At least **100 genuine
+benign and 100 attack** flows must exist in EACH partition. Host-pair group
+and canonical/fingerprint overlap checks fail closed. Train labels come only
+from FIT. No TON, CIC, field holdout or DEV labels are used to fit, build a
+vectorizer, select hyperparameters or calibrate probability threshold.
+
+This is *same-source development* with possible temporal overlap, **not**
+independent-site validation or proof of improved production FPR. Any future
+candidate freeze must separately document grouped/temporal support, training
+ledger, reproducibility, production contract integration, and a genuinely
+untouched independently operated and labeled external capture. Old exposed
+TON test results cannot steer model selection.
