@@ -109,3 +109,14 @@ def test_workflow_enforces_exact_model_and_no_promotion():
     assert "CTU-IoT-Malware-Capture-8-1" in workflow
     assert "CTU-IoT-Malware-Capture-20-1" in workflow
     assert "production_model_signed_and_active" in workflow
+
+
+
+def test_v2_official_benign_honeypot_lowercase_label_is_a_real_benign_row(tmp_path: Path):
+    source = tmp_path / "benign-philips-hue.labeled"
+    source.write_text(header() + row(3, label="benign"))
+    events, labels, counts = parse_capture(source)
+    assert len(events) == 1
+    assert labels.tolist() == [0]
+    assert counts["benign"] == 1
+    assert events[0].label is None
