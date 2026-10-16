@@ -36,10 +36,10 @@ def test_source_only_registry_and_fixed_threshold_grid():
 
 
 def test_group_disjoint_split_reproducible_and_class_safe():
-    original = [event(i) for i in range(1200)]
+    original = [event(i) for i in range(6000)]
     train, cal = source_split(original)
-    assert 600 < len(train) < 1050
-    assert 180 < len(cal) < 500
+    assert 3000 < len(train) < 5300
+    assert 900 < len(cal) < 2000
     assert len({(str(e.src_ip), str(e.dst_ip), e.proto) for e in train} &
                {(str(e.src_ip), str(e.dst_ip), e.proto) for e in cal}) == 0
     assert all(not is_calibration(e) for e in train)
