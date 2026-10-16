@@ -76,7 +76,11 @@ def test_no_signed_runtime_instance_is_rejected():
 
 
 def test_unconfigured_or_development_production_entrypoint_fails_closed(monkeypatch):
-    monkeypatch.setenv("NETWORKPULSE_DEPLOYMENT_MODE", "development")
+    from types import SimpleNamespace
+    from networkpulse.config import Settings
+    monkeypatch.setattr(Settings, "from_env", lambda: SimpleNamespace(
+        deployment_mode="development", auth_mode="local",
+    ))
     with pytest.raises(ValueError, match="requires production OIDC"):
         create_production_v2_app()
 
