@@ -137,7 +137,7 @@ def test_attestation_required_and_exposed_dataset_family_blocked(tmp_path: Path)
     model, manifest, target, att, expected = prepare_files(tmp_path)
     bad = attest(digest(target))
     bad["dataset_family"] = "unsw-nb15"
-    with pytest.raises(ValueError, match="already exposed"):
+    with pytest.raises(ValueError, match="previously exposed"):
         validate_target_attestation(bad, target_sha256=digest(target))
     bad = attest(digest(target))
     bad["labels_are_independently_adjudicated"] = False
