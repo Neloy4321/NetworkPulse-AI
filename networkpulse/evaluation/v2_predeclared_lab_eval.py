@@ -66,7 +66,8 @@ def parse_capture(path: Path):
         if len(parts) != 21:
             raise ValueError("unregistered Zeek schema width")
         trailer = re.split(r"\s{2,}", parts[20].strip())
-        if len(trailer) != 3 or trailer[1] not in ("Benign", "Malicious"):
+        label_key = trailer[1].strip().lower()
+        if len(trailer) != 3 or label_key not in ("benign", "malicious"):
             raise ValueError("unknown/ambiguous source label")
         event = from_zeek_v2(dict(zip(COLUMNS, parts[:20])))
         # CID must be unique; labels must not enter features or training.
@@ -79,7 +80,7 @@ def parse_capture(path: Path):
         if any(not math.isfinite(val) for val in features.values()):
             raise ValueError("nonfinite V2 model inputs")
         rows.append(event)
-        labels.append(int(trailer[1] == "Malicious"))
+        labels.append(int(label_key == "malicious"))
         counted["malicious" if labels[-1] else "benign"] += 1
         if any(getattr(event, name) is None for name in (
             "duration", "orig_bytes", "resp_bytes", "orig_pkts", "resp_pkts"
