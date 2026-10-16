@@ -23,6 +23,32 @@
 > [!IMPORTANT]
 > **Honest scope:** This is a working **engineering demonstration and research prototype**, not a verified production NDR/IDS product. The default model and displayed evaluation metrics use **deterministic synthetic flows**. No claims are made about real intrusion-detection accuracy or continuously running cloud deployments.
 
+## P0 operational ML acceptance: not demonstrated
+
+**Current result: NO-GO for operational model promotion.** Authenticated private-R2
+source acquisition and independent source-integrity checks work, but the
+original UNSW→TON-IoT native IsolationForest research measurement failed the
+predeclared benign false-positive requirement: **21.875% observed FPR,
+25.7886% Wilson 95% upper vs ≤5% allowed**. The TON slice is
+already-exposed research evidence, not a new pristine field holdout.
+
+Further research on the existing feature branch:
+- [PR #25](https://github.com/Neloy4321/NetworkPulse-AI/pull/25):
+  private R2 downloads + fail-closed numerical research quality gate.
+- [PR #26](https://github.com/Neloy4321/NetworkPulse-AI/pull/26):
+  source-only feature audit, supervised candidate comparisons and
+  **cross-capture stress**. Same-source grouped development looked optimistic
+  (RF v1 FPR 4.58% and recall 95.83%), but other captures yielded
+  **21.37%/21.07% benign FPR**. No winning model or signed artifact is
+  approved for promotion. Further research and untouched externally operated
+  labeled site validation are pending.
+
+A green *research execution* check signifies credible measurement, **not**
+production IDS accuracy or acceptance. Stacked draft PRs are intentionally
+unmerged, and repository ZIP downloads never contain the private R2 dataset
+objects or GitHub Actions secrets. See
+[research protocol and real-data evidence](docs/P0_SOURCE_ONLY_FEATURE_AUDIT.md).
+
 ## The engineering problem
 
 Network logs are produced in different shapes by different sensors. An investigator needs them normalized, scored consistently, stored without duplication, and connected to alerts that have an auditable review history. NetworkPulse AI implements that complete **vertical slice**, so data engineering, ML evaluation, API design, persistence, and operational visibility are demonstrable in a single repository.
