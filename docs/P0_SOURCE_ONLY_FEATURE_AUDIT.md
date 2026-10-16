@@ -354,3 +354,38 @@ held-out site is still required for defensible acceptance.
 Note: A GitHub Actions *green* research job means the predetermined
 measurement and report executed correctly. It is **not** a green
 production deployment or external ML acceptance check.
+
+
+## Stage 4 pre-registration: four-fold UNSW Leave-One-Capture-Out development
+
+Since **both** fixed supervised candidates failed the Stage 3 FPR upper
+bound on UNSW captures 2, 3 and 4, future training may legitimately
+include the **previously exposed captures as source development data**.
+This cannot restore their untouched status or certify production.
+
+The next **research-only** experiment is Leave-One-Capture-Out (LOCO),
+with four predetermined raw member captures `UNSW-NB15_1.csv` to
+`UNSW-NB15_4.csv`. Each member is parsed from the identical SHA-pinned
+UNSW ZIP and sampled by a seeded uniform reservoir of **6,000 genuine
+flows** with seeds **60,61,62,63**, no label stratification. For each fold,
+fit the same fixed `rf_supervised_v1` and
+`rf_supervised_port_buckets_no_state` supervised RandomForests on
+the pooled **other three** captures, and evaluate only the excluded
+capture. Repeat for each of four excluded captures. Each fit and
+evaluation sample requires >=100 naturally occurring benign and
+>=100 attack records; otherwise report blocked, no synthetic resampling.
+Remove exact canonical/fingerprint overlaps between pooled FIT and
+held-out sample and report counts; also report **count** of overlapping
+host-pair/protocol groups. Overlapping hosts cannot be declared
+independent even when flow fingerprints differ.
+
+The 160-tree RF hyperparameters, cutoff 0.5 and feature contracts remain
+unchanged. No per-fold threshold tuning, calibration on held-out
+labels, automatic selection, deployment or model freeze. Aggregate
+confusion matrices, confidence intervals and per-fold numerical
+pass/fail flags are descriptive only; CI success means honest
+measurement execution. Four members share one cyber-range testbed,
+captured with the same family of tools; this is **not real production
+or independently operated field validation**. Old exposed TON is
+excluded throughout the experiment. A new untouched external dataset
+and actual deployed/signed model evidence are still required.
