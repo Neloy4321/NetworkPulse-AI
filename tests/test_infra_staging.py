@@ -145,6 +145,7 @@ def test_explicit_mode_and_operator_secrets_mandatory(monkeypatch):
     with pytest.raises(ValueError, match="non-staging"):
         create_production_like_staging_app()
     monkeypatch.setenv("NETWORKPULSE_STAGING_DB_NAME", DATABASE_NAME)
+    monkeypatch.setenv("NETWORKPULSE_STAGING_OIDC_AUDIENCE", "nonml-test")
     with pytest.raises(ValueError, match="STAGING_DB_PASSWORD"):
         create_production_like_staging_app()
 
