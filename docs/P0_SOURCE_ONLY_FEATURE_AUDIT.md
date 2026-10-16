@@ -257,3 +257,36 @@ attack examples in its development portion. Any stress failure is a
 real research finding, not grounds for weakening the 5%/80% external
 predeclared acceptance thresholds. A new untouched independently operated
 labeled site plus real deployment equivalence remains essential for P0.
+
+
+## Original dataset source and intended-use boundary
+
+Official UNSW Canberra project page:
+https://research.unsw.edu.au/projects/unsw-nb15-dataset
+
+UNSW says its raw traffic was generated in a controlled cyber range with
+IXIA PerfectStorm, with both normal traffic and **synthetic attack** traffic.
+Argus/Bro-derived network flow attributes and labels are recorded in four raw
+CSV parts (approximately 2.54 million rows combined); this is **not** an
+independently operated production SOC capture. The project's official page
+permits **academic research use** and calls for author agreement for commercial
+use. Its original usage/citation terms must be reviewed before redistributing
+data or commercializing a training/deployment system.
+
+Specific source-side feature semantics from the project's descriptions:
+- `dur`: total duration of the record.
+- `sbytes`/`dbytes`: source-to-destination/destination-to-source bytes.
+- `spkts`/`dpkts`: direction-specific packet counts.
+- `state`: original dataset's protocol-dependent state; not a documented
+  universal Zeek connection state mapping.
+- `Stime`: start timestamp; native adapter reads it as UNIX seconds.
+
+Our `FlowEvent` adapter normalizes this to duration, directional counters,
+UTC timestamp and lowercase categorical state. It does **not** guarantee
+semantic equivalence between Argus/Bro-derived UNSW fields and future
+production Zeek/Suricata/Ton captures. In particular, raw numeric destination
+port and sensor-specific connection-state categories are subject to shift.
+This motivated research ablations; it does not establish their effectiveness.
+
+Do not upload or publish copies of the R2 ZIP. No raw traffic is committed
+to the public GitHub repo or preserved as workflow artifacts.
