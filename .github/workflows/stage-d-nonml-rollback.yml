@@ -68,6 +68,26 @@ jobs:
             --project "$NP_STAGE_D_PROJECT" \
             --route-dir "$NETWORKPULSE_STAGE_D_ROUTE_DIR" \
             --report "$RUNNER_TEMP/stage-d-release-rollback-evidence.json"
+      - name: Inspect sanitized disposable fixture diagnostics after failure
+        if: failure()
+        run: |
+          python - "$RUNNER_TEMP/stage-d-release-rollback-evidence.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          path = Path(sys.argv[1])
+          if path.is_file():
+              record = json.loads(path.read_text())
+              print("Safe failure type:", record.get("failure_class", "none"))
+              print("Safe phase:", record.get("failed_check", "not available"))
+          PY
+          if [ -n "${NETWORKPULSE_STAGE_D_ROUTE_DIR:-}" ]; then
+            docker compose -p "$NP_STAGE_D_PROJECT" \
+              -f deploy/compose.infra-stage-d.ci.yml ps || true
+            docker compose -p "$NP_STAGE_D_PROJECT" \
+              -f deploy/compose.infra-stage-d.ci.yml \
+              logs --no-color --tail=15 stable candidate router || true
+          fi
       - name: Fail closed if real rollback/identity checks incomplete
         run: |
           python - "$RUNNER_TEMP/stage-d-release-rollback-evidence.json" <<'PY'
