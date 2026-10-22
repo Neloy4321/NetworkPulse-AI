@@ -1,0 +1,109 @@
+name: Stage D model-free isolated release promotion and real rollback
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'networkpulse/infra_stage_d_release_fixture.py'
+      - 'networkpulse/infra_stage_d_release_lab.py'
+      - 'tests/test_infra_stage_d_release.py'
+      - 'deploy/compose.infra-stage-d.ci.yml'
+      - '.github/workflows/stage-d-nonml-rollback.yml'
+      - 'docs/STAGE_D_RELEASE_ROLLBACK_RUNBOOK.md'
+      - 'docs/UNMERGED_BRANCH_AUDIT.md'
+  push:
+    branches: [main]
+    paths:
+      - 'networkpulse/infra_stage_d_release_fixture.py'
+      - 'networkpulse/infra_stage_d_release_lab.py'
+      - 'tests/test_infra_stage_d_release.py'
+      - 'deploy/compose.infra-stage-d.ci.yml'
+      - '.github/workflows/stage-d-nonml-rollback.yml'
+      - 'docs/STAGE_D_RELEASE_ROLLBACK_RUNBOOK.md'
+      - 'docs/UNMERGED_BRANCH_AUDIT.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-disposable-rollback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      NP_STAGE_D_PROJECT: npstaged-${{ github.run_id }}
+      NETWORKPULSE_STAGE_D_CONFIRM: I_ACCEPT_DISPOSABLE_STAGE_D_ROLLBACK
+      NETWORKPULSE_STAGE_D_MODE: ephemeral_nonml_stage_d_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install Python negative-path and HTTP test dependencies
+        run: python -m pip install -e '.[dev]'
+      - name: Lint compile and run fail-closed unit tests
+        run: |
+          python -m ruff check networkpulse/infra_stage_d_release_fixture.py \
+            networkpulse/infra_stage_d_release_lab.py tests/test_infra_stage_d_release.py
+          python -m compileall -q networkpulse/infra_stage_d_release_fixture.py \
+            networkpulse/infra_stage_d_release_lab.py
+          python -m pytest -v tests/test_infra_stage_d_release.py
+      - name: Prepare dedicated disposable release route
+        run: |
+          route_dir="$RUNNER_TEMP/networkpulse-stage-d-$GITHUB_RUN_ID"
+          install -d -m 755 "$route_dir"
+          printf 'stable\n' > "$route_dir/active"
+          chmod 644 "$route_dir/active"
+          echo "NETWORKPULSE_STAGE_D_ROUTE_DIR=$route_dir" >> "$GITHUB_ENV"
+      - name: Validate and start only three synthetic services
+        run: |
+          docker compose -p "$NP_STAGE_D_PROJECT" \
+            -f deploy/compose.infra-stage-d.ci.yml config --quiet
+          docker compose -p "$NP_STAGE_D_PROJECT" \
+            -f deploy/compose.infra-stage-d.ci.yml up -d
+      - name: Promote pinned candidate, SIGKILL it and verify real traffic rollback
+        run: |
+          python -m networkpulse.infra_stage_d_release_lab \
+            --project "$NP_STAGE_D_PROJECT" \
+            --route-dir "$NETWORKPULSE_STAGE_D_ROUTE_DIR" \
+            --report "$RUNNER_TEMP/stage-d-release-rollback-evidence.json"
+      - name: Fail closed if real rollback/identity checks incomplete
+        run: |
+          python - "$RUNNER_TEMP/stage-d-release-rollback-evidence.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          record = json.loads(Path(sys.argv[1]).read_text())
+          assert record["status"] == "passed"
+          assert record["operational_acceptance"] == "NOT_CLAIMED"
+          assert record["production_release"] == "NOT_ATTEMPTED"
+          assert record["model_acceptance"] == "NOT_CLAIMED"
+          assert record["external_deployment"] == "NOT_TESTED"
+          assert record["image_digest_provenance"] == "NOT_VERIFIED"
+          assert record["final_release"] == "stable"
+          for key in ("preflight_wrong_pin_rejected", "candidate_promotion_verified",
+                      "real_owned_candidate_sigkill", "gateway_failure_detected",
+                      "stable_service_survived", "rollback_restored_pinned_stable",
+                      "dead_candidate_repomotion_blocked"):
+              assert record[key] is True, key
+          assert record["promotion_observed_seconds"] >= 0
+          assert record["rollback_observed_seconds"] >= 0
+          print("PASS: real disposable synthetic release rollback; not live deployment")
+          PY
+      - name: Save metadata-only CI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage-d-nonml-release-rollback-${{ github.run_id }}
+          path: ${{ runner.temp }}/stage-d-release-rollback-evidence.json
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Remove only owned CI services, route and volumes
+        if: always()
+        run: |
+          docker compose -p "$NP_STAGE_D_PROJECT" \
+            -f deploy/compose.infra-stage-d.ci.yml down --volumes --remove-orphans || true
+          if [ -n "${NETWORKPULSE_STAGE_D_ROUTE_DIR:-}" ]; then
+            rm -rf -- "$NETWORKPULSE_STAGE_D_ROUTE_DIR"
+          fi
