@@ -247,6 +247,10 @@ def main() -> int:
         result = {"status": "failed", "scope": SCOPE,
                   "failure_class": type(exc).__name__,
                   "operational_acceptance": "NOT_CLAIMED"}
+        # Only hardcoded CI phase labels are safe to emit into public CI logs.
+        reason = str(exc)
+        if type(exc) is RuntimeError and reason.startswith("Stage D timed out: "):
+            result["failed_check"] = reason[:140]
     with args.report.open("x", encoding="utf-8") as stream:
         json.dump(result, stream, indent=2, sort_keys=True)
         stream.write("\n")
