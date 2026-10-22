@@ -189,8 +189,27 @@ def exercise(project: str, route_dir: Path) -> dict:
 
         container_id = owned_service(project, "candidate")
         _docker("kill", "--signal=KILL", container_id)
-        _until("actual candidate outage", lambda:
-               client.get(ENDPOINTS["router"] + "/release").status_code == 503)
+        last_gateway_status = "not_observed"
+
+        def outage_probe():
+            nonlocal last_gateway_status
+            try:
+                response = client.get(ENDPOINTS["router"] + "/release")
+            except httpx.HTTPError:
+                last_gateway_status = "transport_error"
+                return False
+            last_gateway_status = str(response.status_code)
+            return response.status_code == 503
+
+        try:
+            _until("actual candidate outage", outage_probe)
+        except RuntimeError as exc:
+            if "Stage D timed out: actual candidate outage" not in str(exc):
+                raise
+            raise RuntimeError(
+                "Stage D timed out: actual candidate outage "
+                "(gateway_http=" + last_gateway_status + ")"
+            ) from exc
         if client.get(ENDPOINTS["stable"] + "/release").status_code != 200:
             raise RuntimeError("Stable route backup unavailable during failure")
         begin = time.monotonic()
