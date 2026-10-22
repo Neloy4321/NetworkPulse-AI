@@ -12,7 +12,7 @@ from networkpulse.infra_stage_d_release_fixture import (
     SCOPE, digest, make_handler, route_target,
 )
 from networkpulse.infra_stage_d_release_lab import (
-    _switch, owned_service, require_disposable_ci,
+    _preflight, _switch, owned_service, require_disposable_ci,
 )
 
 
@@ -38,6 +38,15 @@ def test_real_http_fixture_identity_and_no_ml(service):
             "sha256": digest("stable"), "ready": True,
         }
         assert client.get(service + "/score").status_code == 404
+
+
+def test_preflight_really_rejects_wrong_pin_before_route_change(service):
+    with httpx.Client(timeout=3, trust_env=False) as client:
+        assert _preflight(client, "stable", digest("stable"))["release"] == "stable"
+        with pytest.raises(ValueError, match="fingerprint mismatch"):
+            _preflight(client, "stable", "0" * 64)
+        with pytest.raises(ValueError, match="Invalid pinned"):
+            _preflight(client, "production", digest("stable"))
 
 
 def test_atomic_transition_has_strict_compare_and_swap(tmp_path):
