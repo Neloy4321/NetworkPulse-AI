@@ -9,7 +9,7 @@ import httpx
 import pytest
 
 from networkpulse.infra_stage_d_release_fixture import (
-    SCOPE, digest, make_handler, route_target,
+    SCOPE, digest, make_handler, resolve_private_ci_upstream, route_target,
 )
 from networkpulse.infra_stage_d_release_lab import (
     _preflight, _switch, owned_service, require_disposable_ci,
@@ -49,6 +49,25 @@ def test_preflight_really_rejects_wrong_pin_before_route_change(service, monkeyp
             _preflight(client, "stable", "0" * 64)
         with pytest.raises(ValueError, match="Invalid pinned"):
             _preflight(client, "production", digest("stable"))
+
+
+def test_private_upstream_ip_is_pinned_and_not_reresolved_after_kill():
+    pinned = {}
+    calls = []
+    def initial_lookup(name):
+        calls.append(name)
+        return "172.20.0.42"
+    assert resolve_private_ci_upstream("candidate", pinned,
+                                       resolver=initial_lookup) == "172.20.0.42"
+    assert resolve_private_ci_upstream(
+        "candidate", pinned,
+        resolver=lambda _: pytest.fail("Killed container must not trigger DNS again"),
+    ) == "172.20.0.42"
+    assert calls == ["candidate"]
+    with pytest.raises(ValueError, match="non-private"):
+        resolve_private_ci_upstream("stable", {}, resolver=lambda _: "8.8.8.8")
+    with pytest.raises(ValueError, match="Unknown"):
+        resolve_private_ci_upstream("production", {}, resolver=initial_lookup)
 
 
 def test_atomic_transition_has_strict_compare_and_swap(tmp_path):
