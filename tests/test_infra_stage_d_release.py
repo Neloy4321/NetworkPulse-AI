@@ -40,7 +40,9 @@ def test_real_http_fixture_identity_and_no_ml(service):
         assert client.get(service + "/score").status_code == 404
 
 
-def test_preflight_really_rejects_wrong_pin_before_route_change(service):
+def test_preflight_really_rejects_wrong_pin_before_route_change(service, monkeypatch):
+    from networkpulse import infra_stage_d_release_lab as lab
+    monkeypatch.setitem(lab.ENDPOINTS, "stable", service)
     with httpx.Client(timeout=3, trust_env=False) as client:
         assert _preflight(client, "stable", digest("stable"))["release"] == "stable"
         with pytest.raises(ValueError, match="fingerprint mismatch"):
