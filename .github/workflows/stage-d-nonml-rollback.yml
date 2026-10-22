@@ -102,8 +102,8 @@ jobs:
       - name: Remove only owned CI services, route and volumes
         if: always()
         run: |
-          docker compose -p "$NP_STAGE_D_PROJECT" \
-            -f deploy/compose.infra-stage-d.ci.yml down --volumes --remove-orphans || true
           if [ -n "${NETWORKPULSE_STAGE_D_ROUTE_DIR:-}" ]; then
+            docker compose -p "$NP_STAGE_D_PROJECT" \
+              -f deploy/compose.infra-stage-d.ci.yml down --volumes --remove-orphans || true
             rm -rf -- "$NETWORKPULSE_STAGE_D_ROUTE_DIR"
           fi
