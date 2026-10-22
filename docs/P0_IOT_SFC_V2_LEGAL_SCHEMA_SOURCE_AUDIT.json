@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "dataset_name": "IoT-SFC v2",
+  "target_version": "v7",
+  "target_archive": "iot_dataset_v7.zip",
+  "target_sha256": "070b1356e5bd296e584109fae79139cfe0f20ff4790f69e42994d67362cb9f62",
+  "assessment_date_utc": "2026-10-23",
+  "sources": [
+    {
+      "url": "https://zenodo.org/records/23371775",
+      "published": "2026-10-14",
+      "version": "v2 (iot_dataset_v7.zip)",
+      "rights_display": "Copyright nauss 2026",
+      "license_grant_verified": false,
+      "reported_rows": 42020554,
+      "reported_columns": 87
+    },
+    {
+      "url": "https://data.mendeley.com/datasets/j9xffc2psb/6",
+      "version": "6 (iot_dataset_complete.zip)",
+      "rights_display": "CC BY 4.0",
+      "license_grant_verified_for_this_version": true,
+      "license_grant_verified_for_v7": false,
+      "reported_rows": 49902287,
+      "reported_columns": 88
+    }
+  ],
+  "discrepancy": "Different file names, row/column counts and license metadata between versions; cannot transfer CC BY 4.0 rights from previous release to downloaded v7 by assumption.",
+  "notes": [
+    "A public download is not itself an affirmative permission to redistribute data or derived files.",
+    "Research use is advertised as an application, but version-specific reuse grant is unresolved.",
+    "Check the EXACT v7 Mendeley record rights and file checksum, or obtain a rights-holder statement before scoring.",
+    "Require evidence of allowed processing/research/publication of aggregate metrics and prohibited raw redistribution before proceeding.",
+    "Public laboratory testbed is not an independently operated live production SOC."
+  ],
+  "status": "RIGHTS_CLARIFICATION_REQUIRED",
+  "research_scoring_authorized_by_this_audit": false,
+  "legal_conclusion": "NOT A LEGAL OPINION",
+  "schema_assessment": {
+    "publisher_claimed_columns": 87,
+    "source": "https://zenodo.org/records/23371775",
+    "csv_header_independently_inspected": false,
+    "merged_zeek_event_types": [
+      "conn.log",
+      "dns.log",
+      "http.log",
+      "ssl.log",
+      "ssh.log",
+      "weird.log",
+      "mqtt_*.log"
+    ],
+    "expected_required_v2_conn_keys": [
+      "ts",
+      "id.orig_h",
+      "id.orig_p",
+      "id.resp_h",
+      "id.resp_p",
+      "proto"
+    ],
+    "exact_adapter_mapping_verified": false,
+    "conn_log_filter_proven": false,
+    "label_provenance_verified": false,
+    "data_rows_read": false,
+    "model_scored": false,
+    "schema_status": "PUBLISHER_DESCRIPTION_ONLY_LOCAL_HEADER_REPORT_PENDING"
+  },
+  "model_lock": {
+    "artifact_sha256": "cd239783fd4318c0c4e897f1d451c2d5af4b42132979c79a4e489df626f538a5",
+    "threshold": 0.2,
+    "feature_contract": "missingness_aware_flow_v2",
+    "threshold_or_model_changed": false
+  },
+  "p0_operational_ml_acceptance": "NO_GO"
+}
