@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "protocol_id": "networkpulse-iot-sfc-v2-2026-10-23-research-holdout-v1",
+  "status": "PREREGISTERED_NOT_SCORED",
+  "scope": "public_laboratory_transfer_research_only",
+  "operational_ml_acceptance": "NO_GO",
+  "model": {
+    "kind": "V2_source_calibrated_unsigned_RandomForest",
+    "artifact_sha256": "cd239783fd4318c0c4e897f1d451c2d5af4b42132979c79a4e489df626f538a5",
+    "source_manifest_protocol_sha256": "3810aeb3f9510e2b6e736923ec7a44798fad9d37a56e3d27140c15a0f37fcfde",
+    "threshold": 0.2,
+    "feature_contract": "missingness_aware_flow_v2",
+    "production_signed": false,
+    "source_model_github_run": 38909855312,
+    "source_model_artifact_id": 12050072139,
+    "source_manifest_artifact_id": 12049488464,
+    "original_calibration_outcomes_already_exposed": true
+  },
+  "target": {
+    "name": "IoT-SFC v2",
+    "zenodo_record": "https://zenodo.org/records/23371775",
+    "archive_basename": "iot_dataset_v7.zip",
+    "archive_size_bytes": 776500807,
+    "archive_md5": "6b858e337a8241b89f4d76f9a1454a60",
+    "archive_sha256": "070b1356e5bd296e584109fae79139cfe0f20ff4790f69e42994d67362cb9f62",
+    "single_csv_member": "iot_dataset_v7.csv",
+    "declared_csv_size_bytes": 13561863941,
+    "label_or_header_cells_inspected": false,
+    "archive_member_crc_verified": false,
+    "archive_sha256_origin": "user_executed_local_preflight_report_not_independently_downloaded",
+    "independently_operated_field_site": false,
+    "license_and_permitted_use_verified": false,
+    "ground_truth_per_flow_adjudicated": false
+  },
+  "numeric_gates": {
+    "fpr_wilson_95_upper_max": 0.05,
+    "recall_wilson_95_lower_min": 0.8,
+    "min_natural_benign": 200,
+    "min_natural_attack": 100,
+    "min_distinct_capture_days": 3,
+    "require_per_day_metrics": true,
+    "require_cluster_aware_uncertainty_review": true,
+    "require_zero_training_target_overlap": true
+  },
+  "frozen_analysis_plan": {
+    "training_on_iot_sfc_labels": false,
+    "threshold_selection_on_iot_sfc_labels": false,
+    "feature_selection_on_iot_sfc_labels": false,
+    "model_selection_on_iot_sfc_labels": false,
+    "score_only_after_license_schema_label_provenance_and_duplicate_checks": true,
+    "unknown_or_unsupported_zeek_event_types": "BLOCK_NO_SILENT_ZERO_IMPUTATION",
+    "ambiguous_attack_window_boundaries": "EXCLUDE_AND_REPORT_WITH_REASON",
+    "missing_or_inconsistent_ground_truth": "BLOCK_AND_REQUIRE_INDEPENDENT_REVIEW",
+    "minimum_test_policy": "one_frozen_model_one_fixed_threshold_all_eligible_records",
+    "slicing": [
+      "capture_utc_day",
+      "attack_family",
+      "benign_workload",
+      "device_group_when_independently_grounded"
+    ],
+    "reporting": [
+      "TN_FP_FN_TP",
+      "observed_FPR_and_recall",
+      "wilson_95_bounds",
+      "per_day_and_per_attack_family_support",
+      "per_day_false_alert_burden",
+      "duplicate_overlap_audit",
+      "label_and_sensor_contract_audit"
+    ],
+    "after_first_test_unblinding": "TARGET_BECOMES_EXPOSED_NO_RETRY_ACCEPTANCE",
+    "if_any_gate_fails": "RESEARCH_NO_GO"
+  }
+}
