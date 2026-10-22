@@ -1,0 +1,66 @@
+name: IoT-SFC legal provenance and header-only schema audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'networkpulse/evaluation/iot_sfc_schema_audit.py'
+      - 'tests/test_iot_sfc_schema_audit.py'
+      - 'docs/P0_IOT_SFC_V2_LEGAL_SCHEMA_SOURCE_AUDIT.json'
+      - 'docs/P0_IOT_SFC_V2_LEGAL_AND_SCHEMA_RUNBOOK.md'
+      - '.github/workflows/p0-iot-sfc-legal-schema-audit.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'networkpulse/evaluation/iot_sfc_schema_audit.py'
+      - 'tests/test_iot_sfc_schema_audit.py'
+      - 'docs/P0_IOT_SFC_V2_LEGAL_SCHEMA_SOURCE_AUDIT.json'
+      - 'docs/P0_IOT_SFC_V2_LEGAL_AND_SCHEMA_RUNBOOK.md'
+      - '.github/workflows/p0-iot-sfc-legal-schema-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  metadata-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install unit test dependencies
+        run: python -m pip install -e '.[dev]'
+      - name: Verify code lint
+        run: >-
+          python -m ruff check networkpulse/evaluation/iot_sfc_schema_audit.py
+          tests/test_iot_sfc_schema_audit.py
+      - name: Run bounded-header, immutable-model and deny-promotion tests
+        run: python -m pytest -v tests/test_iot_sfc_schema_audit.py
+      - name: Fail closed on unresolved rights and missing raw CSV evidence
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          source = json.loads(Path(
+              "docs/P0_IOT_SFC_V2_LEGAL_SCHEMA_SOURCE_AUDIT.json"
+          ).read_text(encoding="utf-8"))
+          assert source["status"] == "RIGHTS_CLARIFICATION_REQUIRED"
+          assert source["research_scoring_authorized_by_this_audit"] is False
+          assert source["schema_assessment"]["csv_header_independently_inspected"] is False
+          assert source["schema_assessment"]["data_rows_read"] is False
+          assert source["schema_assessment"]["model_scored"] is False
+          assert source["model_lock"]["threshold"] == 0.2
+          assert source["model_lock"]["threshold_or_model_changed"] is False
+          assert source["p0_operational_ml_acceptance"] == "NO_GO"
+          assert not Path("iot_dataset_v7.csv").exists()
+          assert not Path("iot_dataset_v7.zip").exists()
+          print("Rights unresolved, real header pending; model remains unchanged")
+          PY
