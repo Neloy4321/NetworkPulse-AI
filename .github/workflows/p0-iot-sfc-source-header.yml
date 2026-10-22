@@ -1,0 +1,84 @@
+name: P0 official IoT-SFC archive acquisition and sealed-header verification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/p0-iot-sfc-source-header.yml'
+      - 'docs/P0_IOT_SFC_V2_REMOTE_SCHEMA_RUNBOOK.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  official-source-header-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      ORIGINAL_ZIP_URL: https://zenodo.org/records/23371775/files/iot_dataset_v7.zip?download=1
+      ORIGINAL_ZIP_SHA256: 070b1356e5bd296e584109fae79139cfe0f20ff4790f69e42994d67362cb9f62
+      EXPECTED_ZIP_BYTES: '776500807'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install only repository metadata validator dependencies
+        run: python -m pip install -e .
+      - name: Download SHA-pinned source from official Zenodo record only
+        run: |
+          set -euo pipefail
+          mkdir -p private-source aggregate-evidence
+          curl -fLSs --retry 2 --retry-delay 7 --connect-timeout 30 \
+            --max-time 1600 \
+            --output private-source/iot_dataset_v7.zip \
+            "$ORIGINAL_ZIP_URL"
+          size=$(stat -c '%s' private-source/iot_dataset_v7.zip)
+          test "$size" = "$EXPECTED_ZIP_BYTES" || {
+            echo "Official ZIP size mismatch: refuse to read archive"; exit 2;
+          }
+          actual=$(sha256sum private-source/iot_dataset_v7.zip | cut -d ' ' -f1)
+          test "$actual" = "$ORIGINAL_ZIP_SHA256" || {
+            echo "Official ZIP SHA mismatch: refuse to read archive"; exit 2;
+          }
+          echo "Original official-source ZIP SHA256 and exact byte length verified"
+      - name: Inspect only one bounded CSV header, never flow rows or labels
+        run: |
+          set -euo pipefail
+          python -m networkpulse.evaluation.iot_sfc_schema_audit \
+            --archive private-source/iot_dataset_v7.zip \
+            --report aggregate-evidence/iot-sfc-v7-header-only.json
+      - name: Refuse any inference, rights or field acceptance promotion
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path('aggregate-evidence/iot-sfc-v7-header-only.json')
+          report = json.loads(path.read_text(encoding='utf-8'))
+          assert report['archive_sha256_verified_from_original_bytes'] is True
+          assert report['csv_header_read'] is True
+          assert report['csv_data_rows_read'] is False
+          assert report['label_values_read'] is False
+          assert report['model_predictions_generated'] is False
+          assert report['member_crc_verified'] is False
+          assert report['legal_reuse_rights_confirmed'] is False
+          assert report['schema']['accepted_for_model_scoring'] is False
+          assert report['operational_ml_acceptance'] == 'NO_GO'
+          assert len(report['schema']['columns']) <= 1024
+          print('Only frozen-model-safe header metadata acquired; NO ML PASS')
+          PY
+      - name: Destroy retrieved raw original archive
+        if: always()
+        run: |
+          rm -f private-source/iot_dataset_v7.zip
+          test ! -e private-source/iot_dataset_v7.zip
+      - name: Keep header metadata evidence only, never raw user traffic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iot-sfc-v7-official-sha-pinned-header-only-no-labels
+          path: aggregate-evidence/iot-sfc-v7-header-only.json
+          if-no-files-found: ignore
+          retention-days: 14
