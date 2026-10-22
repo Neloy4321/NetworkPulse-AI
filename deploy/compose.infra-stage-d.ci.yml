@@ -1,0 +1,35 @@
+# Disposable CI only. All published endpoints loopback and synthetic non-ML.
+# Does NOT start NetworkPulse IDS models, real collectors, real secrets or OIDC.
+x-common: &common
+  image: python:3.12-alpine
+  user: "65534:65534"
+  read_only: true
+  cap_drop: ["ALL"]
+  security_opt: ["no-new-privileges:true"]
+  pids_limit: 48
+  restart: "no"
+  environment:
+    NETWORKPULSE_STAGE_D_MODE: ephemeral_nonml_stage_d_ci
+    PYTHONDONTWRITEBYTECODE: "1"
+  volumes:
+    - ../networkpulse/infra_stage_d_release_fixture.py:/opt/stage-d/fixture.py:ro
+  networks: [stage_d_private]
+services:
+  stable:
+    <<: *common
+    command: ["python", "/opt/stage-d/fixture.py", "--role", "stable"]
+    ports: ["127.0.0.1:18811:8000"]
+  candidate:
+    <<: *common
+    command: ["python", "/opt/stage-d/fixture.py", "--role", "candidate"]
+    ports: ["127.0.0.1:18812:8000"]
+  router:
+    <<: *common
+    command: ["python", "/opt/stage-d/fixture.py", "--role", "router", "--route-file", "/route/active"]
+    volumes:
+      - ../networkpulse/infra_stage_d_release_fixture.py:/opt/stage-d/fixture.py:ro
+      - ${NETWORKPULSE_STAGE_D_ROUTE_DIR:?Dedicated CI synthetic route directory required}:/route:ro
+    depends_on: [stable, candidate]
+    ports: ["127.0.0.1:18810:8000"]
+networks:
+  stage_d_private: {}
