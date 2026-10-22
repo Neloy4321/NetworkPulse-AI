@@ -7,8 +7,10 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import ipaddress
 import json
 import os
+import socket
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -31,9 +33,31 @@ def route_target(path: Path) -> str:
     return value
 
 
+def resolve_private_ci_upstream(name: str, cache: dict[str, str], *, resolver=None) -> str:
+    """Cache an already-alive container's private IP; never re-resolve after kill.
+
+    Docker embedded DNS can stall once a container exits; a cached, preflighted
+    private endpoint guarantees the failure probe has a bounded connection path.
+    """
+    if name not in {"stable", "candidate"}:
+        raise ValueError("Unknown synthetic release host")
+    if name not in cache:
+        raw = (resolver or socket.gethostbyname)(name)
+        try:
+            ip = ipaddress.IPv4Address(raw)
+        except ipaddress.AddressValueError as exc:
+            raise ValueError("Invalid CI upstream address") from exc
+        if not ip.is_private or ip.is_loopback or ip.is_unspecified:
+            raise ValueError("Refusing any non-private Docker upstream")
+        cache[name] = str(ip)
+    return cache[name]
+
+
 def make_handler(role: str, route_file: Path | None = None):
     if role not in ROLES:
         raise ValueError("Invalid CI fixture role")
+
+    ci_ip_cache: dict[str, str] = {}
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -63,8 +87,9 @@ def make_handler(role: str, route_file: Path | None = None):
                 if route_file is None:
                     raise ValueError("No route file provided")
                 active = route_target(route_file)
+                upstream_ip = resolve_private_ci_upstream(active, ci_ip_cache)
                 request = urllib.request.Request(
-                    f"http://{active}:8000{self.path}",
+                    f"http://{upstream_ip}:8000{self.path}",
                     method="GET", headers={"Accept": "application/json"},
                 )
                 with urllib.request.urlopen(request, timeout=1.0) as r:
