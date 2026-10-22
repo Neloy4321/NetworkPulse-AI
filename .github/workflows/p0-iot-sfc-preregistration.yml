@@ -1,0 +1,72 @@
+name: P0 IoT-SFC CSV-blind research preregistration checks
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docs/P0_IOT_SFC_V2_FROZEN_PREREGISTRATION.json'
+      - 'docs/P0_IOT_SFC_V2_PREREGISTRATION_RUNBOOK.md'
+      - 'networkpulse/evaluation/iot_sfc_preregistration.py'
+      - 'tests/test_iot_sfc_preregistration.py'
+      - '.github/workflows/p0-iot-sfc-preregistration.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/P0_IOT_SFC_V2_FROZEN_PREREGISTRATION.json'
+      - 'docs/P0_IOT_SFC_V2_PREREGISTRATION_RUNBOOK.md'
+      - 'networkpulse/evaluation/iot_sfc_preregistration.py'
+      - 'tests/test_iot_sfc_preregistration.py'
+      - '.github/workflows/p0-iot-sfc-preregistration.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frozen-prescore-metadata-only:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12']
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install repo and tests without external target download
+        run: python -m pip install -e '.[dev]'
+      - name: Lint guard and fail-closed tests
+        run: |
+          python -m ruff check \
+            networkpulse/evaluation/iot_sfc_preregistration.py \
+            tests/test_iot_sfc_preregistration.py
+          python -m compileall -q networkpulse/evaluation/iot_sfc_preregistration.py
+      - name: Verify pinned preregistration and absence of operational claims
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from networkpulse.evaluation.iot_sfc_preregistration import (
+              validate_preregistration, MODEL_SHA, TARGET_SHA,
+          )
+          spec = json.loads(Path(
+              'docs/P0_IOT_SFC_V2_FROZEN_PREREGISTRATION.json'
+          ).read_text())
+          validate_preregistration(spec)
+          assert spec['model']['artifact_sha256'] == MODEL_SHA
+          assert spec['target']['archive_sha256'] == TARGET_SHA
+          assert spec['target']['label_or_header_cells_inspected'] is False
+          assert spec['operational_ml_acceptance'] == 'NO_GO'
+          print('Metadata-only preregistration; no model/target scoring')
+          PY
+      - name: Test SHA, manifest, label and license rejection
+        run: python -m pytest -v tests/test_iot_sfc_preregistration.py
+      - name: Check CI has no raw target CSV or unsigned model binary
+        run: |
+          test ! -e iot_dataset_v7.csv
+          test ! -e iot_dataset_v7.zip
+          test ! -e research-only-v2-calibrated.joblib
+          echo "No target data examined; operational ML remains NO_GO"
