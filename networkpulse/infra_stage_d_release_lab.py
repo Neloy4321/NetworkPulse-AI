@@ -6,6 +6,7 @@ signed model/image rollout or production release authorization.
 from __future__ import annotations
 
 import argparse
+import hmac
 import json
 import os
 import re
@@ -123,6 +124,18 @@ def _verified_response(client: httpx.Client, role: str) -> dict:
     return record
 
 
+def _preflight(client: httpx.Client, role: str, expected_sha256: str) -> dict:
+    """Enforce the declared synthetic artifact fingerprint before promotion."""
+    if role not in {"stable", "candidate"} or not re.fullmatch(
+        r"[0-9a-f]{64}", expected_sha256
+    ):
+        raise ValueError("Invalid pinned synthetic release candidate")
+    response = _verified_response(client, role)
+    if not hmac.compare_digest(response["sha256"], expected_sha256):
+        raise ValueError("Pinned release fingerprint mismatch; route unchanged")
+    return response
+
+
 def _switch(dir_path: Path, target: str, *, expected_previous: str) -> None:
     if target not in {"stable", "candidate"} or expected_previous not in (
         "stable", "candidate"
@@ -153,15 +166,19 @@ def _switch(dir_path: Path, target: str, *, expected_previous: str) -> None:
 def exercise(project: str, route_dir: Path) -> dict:
     with httpx.Client(timeout=2.0, trust_env=False) as client:
         stable = _until("stable dependency readiness", lambda:
-                        _verified_response(client, "stable"))
+                        _preflight(client, "stable", digest("stable")))
         candidate = _until("candidate dependency readiness", lambda:
-                           _verified_response(client, "candidate"))
+                           _preflight(client, "candidate", digest("candidate")))
         _until("initial gateway stable", lambda:
                _verified_response(client, "router")["release"] == "stable")
-        # Incorrect expected digest must fail before writing any routing state.
-        wrong_pin_rejected = candidate["sha256"] != "0" * 64
+        # Actual negative preflight, not a tautological boolean comparison.
+        wrong_pin_rejected = False
+        try:
+            _preflight(client, "candidate", "0" * 64)
+        except ValueError:
+            wrong_pin_rejected = True
         if not wrong_pin_rejected:
-            raise RuntimeError("Candidate digest mismatch was not rejected")
+            raise RuntimeError("Wrong candidate digest did not fail closed")
         if (route_dir / "active").read_text(encoding="ascii") != "stable\n":
             raise RuntimeError("Dry-run changed stable route")
         started = time.monotonic()
@@ -183,13 +200,14 @@ def exercise(project: str, route_dir: Path) -> dict:
         if verified["release"] != "stable" or verified["sha256"] != stable["sha256"]:
             raise RuntimeError("Rollback target identity was not restored")
         rolled_back = round(time.monotonic() - begin, 3)
-        # Promotion must fail closed if the candidate remains dead.
+        # A second genuine preflight must fail while the candidate is dead.
+        repromotion_blocked = False
         try:
-            candidate_alive = client.get(ENDPOINTS["candidate"] + "/health/ready").status_code == 200
-        except httpx.HTTPError:
-            candidate_alive = False
-        if candidate_alive:
-            raise RuntimeError("Killed candidate unexpectedly healthy")
+            _preflight(client, "candidate", candidate["sha256"])
+        except (httpx.HTTPError, ValueError):
+            repromotion_blocked = True
+        if not repromotion_blocked:
+            raise RuntimeError("Killed candidate unexpectedly passed promotion preflight")
         if (route_dir / "active").read_text(encoding="ascii") != "stable\n":
             raise RuntimeError("Rollback did not persist stable route")
         return {
@@ -205,7 +223,7 @@ def exercise(project: str, route_dir: Path) -> dict:
             "gateway_failure_detected": True,
             "stable_service_survived": True,
             "rollback_restored_pinned_stable": True,
-            "dead_candidate_repomotion_blocked": True,
+            "dead_candidate_repomotion_blocked": repromotion_blocked,
             "promotion_observed_seconds": promoted,
             "rollback_observed_seconds": rolled_back,
             "final_release": "stable",
