@@ -9,7 +9,6 @@ import argparse
 import hashlib
 import json
 import os
-import re
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
