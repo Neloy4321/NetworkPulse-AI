@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import csv
-import io
 from types import SimpleNamespace
 
 import pytest
