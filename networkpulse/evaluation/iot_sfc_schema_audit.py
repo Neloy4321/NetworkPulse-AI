@@ -32,7 +32,7 @@ OPTIONAL_ZEEK_CONN = (
 SOURCE_LOG_FIELDS = (
     "log_type", "log_source", "source_log", "zeek_log", "log_name", "_path",
 )
-LABEL_FIELDS = ("label", "attack_label", "is_attack", "type_of_attack")
+LABEL_FIELDS = ("label", "attack", "attack_label", "is_attack", "type_of_attack")
 # These *might* be aliases; no automatic mapping from a merged record.
 POTENTIAL_ALIASES = {
     "ts": ("timestamp", "time", "start_time"),
