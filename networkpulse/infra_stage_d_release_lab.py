@@ -48,8 +48,8 @@ def require_disposable_ci(project: str, route_dir: Path) -> None:
     parent = Path(os.environ.get("RUNNER_TEMP", "/nonexistent")).resolve()
     if (route_dir.is_symlink() or not route_dir.is_dir()
             or route_dir.resolve().parent != parent
-            or stat.S_IMODE(route_dir.stat().st_mode) != 0o700):
-        raise ValueError("Stage D route folder must be CI-private mode-0700 directory")
+            or stat.S_IMODE(route_dir.stat().st_mode) != 0o755):
+        raise ValueError("Stage D route folder must be dedicated CI-only mode-0755 directory")
     active = route_dir / "active"
     if (not active.is_file() or active.is_symlink()
             or active.read_text(encoding="ascii") != "stable\n"):
@@ -184,7 +184,11 @@ def exercise(project: str, route_dir: Path) -> dict:
             raise RuntimeError("Rollback target identity was not restored")
         rolled_back = round(time.monotonic() - begin, 3)
         # Promotion must fail closed if the candidate remains dead.
-        if client.get(ENDPOINTS["candidate"] + "/health/ready").status_code == 200:
+        try:
+            candidate_alive = client.get(ENDPOINTS["candidate"] + "/health/ready").status_code == 200
+        except httpx.HTTPError:
+            candidate_alive = False
+        if candidate_alive:
             raise RuntimeError("Killed candidate unexpectedly healthy")
         if (route_dir / "active").read_text(encoding="ascii") != "stable\n":
             raise RuntimeError("Rollback did not persist stable route")
