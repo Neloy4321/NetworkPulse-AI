@@ -257,13 +257,45 @@ def run(archive: Path, baseline_path: Path, output: Path) -> dict:
                     new_counts = confusion(holdout_y, new_probs >= candidate_cutoff)
                     old_counts = confusion(holdout_y, old_probs >= BASELINE_CUTOFF)
                     day_counts = defaultdict(lambda: {"y0": 0, "y1": 0})
-                    overlap = 0
                     fit_groups = {group_key(development[i]) for i in train_i}
+                    group_seen = np.asarray(
+                        [group_key(f) in fit_groups for f in holdout], dtype=bool
+                    )
+                    overlap = int(np.sum(group_seen))
                     for flow, label in zip(holdout, holdout_y):
-                        if group_key(flow) in fit_groups:
-                            overlap += 1
                         key = flow.timestamp.date().isoformat()
                         day_counts[key]["y1" if label else "y0"] += 1
+                    comparison_slices = {}
+                    for slice_name, mask in (
+                        ("group_seen_in_fit", group_seen),
+                        ("group_unseen_in_fit", ~group_seen),
+                    ):
+                        selected_truth = holdout_y[mask]
+                        old_counts_slice = confusion(
+                            selected_truth, old_probs[mask] >= BASELINE_CUTOFF
+                        )
+                        new_counts_slice = confusion(
+                            selected_truth, new_probs[mask] >= candidate_cutoff
+                        )
+                        comparison_slices[slice_name] = {
+                            "rows": int(np.sum(mask)),
+                            "baseline": _quality(old_counts_slice),
+                            "candidate": _quality(new_counts_slice),
+                            "same_public_lab_not_independent_site": True,
+                        }
+                    per_day_comparison = {}
+                    for day in sorted(day_counts):
+                        mask = np.asarray([
+                            f.timestamp.date().isoformat() == day for f in holdout
+                        ], dtype=bool)
+                        per_day_comparison[day] = {
+                            "baseline": _quality(confusion(
+                                holdout_y[mask], old_probs[mask] >= BASELINE_CUTOFF
+                            )),
+                            "candidate": _quality(confusion(
+                                holdout_y[mask], new_probs[mask] >= candidate_cutoff
+                            )),
+                        }
                 finally:
                     csv.field_size_limit(previous)
     old_quality, new_quality = _quality(old_counts), _quality(new_counts)
@@ -288,6 +320,8 @@ def run(archive: Path, baseline_path: Path, output: Path) -> dict:
         "later_segment_score_rows": int(len(holdout_y)),
         "later_segment_days": dict(sorted(day_counts.items())),
         "later_segment_hostpair_seen_during_source_fit": overlap,
+        "same_group_vs_unseen_group_metrics": comparison_slices,
+        "per_day_identical_row_model_comparison": per_day_comparison,
         "later_segment_exact_flow_duplicates_excluded": holdout_stats["duplicate_excluded"],
         "baseline_on_identical_later_rows": old_quality,
         "candidate_on_identical_later_rows": new_quality,
