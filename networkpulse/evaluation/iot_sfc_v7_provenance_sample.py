@@ -21,7 +21,7 @@ from networkpulse.evaluation.iot_sfc_preregistration import (
     MODEL_SHA, TARGET_SHA, TARGET_SIZE,
 )
 from networkpulse.evaluation.iot_sfc_v7_conn_adapter import (
-    HEADER_EVIDENCE, RowNotEligible, conn_log_to_flow_v2,
+    RowNotEligible, conn_log_to_flow_v2,
     inspect_untrusted_producer_label, verify_exact_header,
 )
 
