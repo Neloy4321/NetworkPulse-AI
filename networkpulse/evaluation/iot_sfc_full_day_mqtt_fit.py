@@ -37,6 +37,11 @@ FIT_BENIGN_CAP_DAY = 5_000
 FIT_ATTACK_CAP_DAY_FAMILY = 1_500
 DEV_BENIGN_CAP_DAY = 10_000
 DEV_ATTACK_CAP_FAMILY = 3_000
+# Predeclared and independent of producer labels, dates, and model scores.
+# Reserve entire host-pair/protocol groups before taking ANY source FIT rows,
+# so April 10 development has attack-positive groups unavailable to training.
+SOURCE_DEV_GROUP_MODULUS = 5
+SOURCE_DEV_GROUP_RESIDUE = 0
 APPROVED_FAMILIES = frozenset((
     "httpflood", "hydrabruteforce", "botnetsim", "cameratapoc200attack",
     "mitmarpspoof", "mqtt_brute_force", "mqtt_dos", "mqtt_malformed",
@@ -54,6 +59,12 @@ def family_bin(row: dict, label: int) -> str:
 def identity_hash(flow) -> bytes:
     key = repair.group_key(flow)
     return hashlib.sha256("|".join(key).encode("utf-8")).digest()
+
+
+def reserved_source_dev_group(flow) -> bool:
+    """Static 20% identity partition; do not adapt after seeing holdout labels."""
+    return (int.from_bytes(identity_hash(flow)[:8], "big")
+            % SOURCE_DEV_GROUP_MODULUS == SOURCE_DEV_GROUP_RESIDUE)
 
 
 class Reservoir:
@@ -126,6 +137,14 @@ def buckets_from_original(archive: Path):
                         bucket = (region, day.isoformat(), fam)
                         family_counts["|".join(bucket)] += 1
                         eligible_days[day.isoformat()] += 1
+                        reserved = reserved_source_dev_group(flow)
+                        # All FIT source samples exclude reserved groups;
+                        # DEV includes *only* those reserved source groups.
+                        # The partition is made from flow identity alone,
+                        # before consulting labels, family or predictions.
+                        if (region == "fit" and reserved) or (region == "dev" and not reserved):
+                            stats["source_group_partition_excluded_" + region] += 1
+                            continue
                         if region == "fit":
                             fit_groups_all.add(identity_hash(flow))
                         if bucket not in pools:
@@ -162,6 +181,9 @@ def buckets_from_original(archive: Path):
         "bounded_sample_by_family_day": dict(sorted(retained.items())),
         "raw_development_sample": dev_raw_sample,
         "development_fit_hostpair_overlap_excluded": excluded_dev_groups,
+        "group_partition_rule": "sha256(hostpair|protocol)_first64_mod5_eq0_reserved_for_source_dev",
+        "source_dev_reservation_rate_nominal": 0.20,
+        "group_partition_selected_before_inspecting_labels": True,
         "unique_fit_hostpair_protocol_hashes_in_memory_only": len(fit_groups_all),
         "late_test_labels_inspected_during_source_fit": False,
     }

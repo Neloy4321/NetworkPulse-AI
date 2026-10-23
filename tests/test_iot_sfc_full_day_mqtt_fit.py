@@ -1,6 +1,8 @@
 """Bounds and source-only selection invariants for full-archive MQTT repair."""
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from networkpulse.evaluation import iot_sfc_full_day_mqtt_fit as full
 from networkpulse.evaluation import iot_sfc_mqtt_repair as repair
 
@@ -37,6 +39,18 @@ def test_source_date_fence_and_capacity():
     assert full.DEV_DAY.isoformat() == "2025-04-10"
     assert full.DEV_DAY < full.locked.TEST_DAYS[0]
     assert full.FIT_ATTACK_CAP_DAY_FAMILY < full.DEV_ATTACK_CAP_FAMILY
+
+
+def test_predeclared_group_partition_is_stable_and_independent_of_timestamp_or_label():
+    assert full.SOURCE_DEV_GROUP_MODULUS == 5
+    assert full.SOURCE_DEV_GROUP_RESIDUE == 0
+    first = SimpleNamespace(src_ip="192.0.2.1", dst_ip="198.51.100.2", proto="tcp")
+    same = SimpleNamespace(src_ip="192.0.2.1", dst_ip="198.51.100.2", proto="tcp")
+    assert full.reserved_source_dev_group(first) == full.reserved_source_dev_group(same)
+    assert isinstance(full.reserved_source_dev_group(first), bool)
+    assert len({full.reserved_source_dev_group(SimpleNamespace(
+        src_ip=f"192.0.2.{i}", dst_ip="198.51.100.2", proto="tcp"))
+        for i in range(1, 100)}) == 2
 
 
 def test_diagnostic_or_restores_either_model_positive_without_recutting_frozen():
