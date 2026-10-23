@@ -39,9 +39,9 @@ def test_non_conn_sources_blocked(type_):
 
 def test_descriptive_metrics_confusion_and_no_false_acceptance():
     from collections import Counter
-    values = Counter({"tn": 100, "fp": 2, "fn": 2, "tp": 110})
+    values = Counter({"tn": 400, "fp": 2, "fn": 2, "tp": 210})
     report = score._quality(values)
-    assert report["confusion"] == {"tn": 100, "fp": 2, "fn": 2, "tp": 110}
+    assert report["confusion"] == {"tn": 400, "fp": 2, "fn": 2, "tp": 210}
     assert report["ground_truth_independently_adjudicated"] is False
     assert report["true_acceptance"] == "NOT_ESTABLISHED"
     assert "numeric_research_pass" not in report
