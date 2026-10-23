@@ -24,6 +24,7 @@ import numpy as np
 
 from networkpulse.evaluation import iot_sfc_locked_later_days as locked
 from networkpulse.evaluation import iot_sfc_mqtt_repair as repair
+from networkpulse.evaluation import iot_sfc_combined_uwf_external as uwf_external
 from networkpulse.evaluation.iot_sfc_frozen_score import adapt_v7_conn
 from networkpulse.evaluation.iot_sfc_v7_conn_adapter import (
     RowNotEligible, inspect_untrusted_producer_label, verify_exact_header,
@@ -185,7 +186,7 @@ def replay_exposed(archive, original, vectorizer, model, cutoff):
                     csv.field_size_limit(previous)
 
 
-def run(archive: Path, original_path: Path):
+def run(archive: Path, original_path: Path, external_csv: Path | None = None):
     original = locked.verify_source_and_model(archive, original_path)
     flows, labels, families, ledger = buckets_from_original(archive)
     vectorizer, model, cutoff, choice = repair.fit_source(flows, labels, families)
@@ -198,7 +199,13 @@ def run(archive: Path, original_path: Path):
     if (fused["selection_is_independently_qualified"] is not False
             or fused["already_exposed_same_lab_labels"] is not True):
         raise ValueError("Research-only OR must never be marked qualified")
-    return {
+    # The model and fallback cutoff are already fixed before examining ANY
+    # independent-source scores or labels. UWF was used previously only with
+    # the historical frozen model, so this remains a research transfer stress.
+    cross_source = (uwf_external.score(external_csv, original, vectorizer,
+                                       model, cutoff)
+                    if external_csv is not None else None)
+    result = {
         "status": "P0_FULL_SOURCE_DATE_FAMILY_MQTT_RESEARCH_STRESS_ONLY",
         "original_source_sha256": locked.TARGET_SHA,
         "original_frozen_model_sha256": locked.MODEL_SHA,
@@ -214,6 +221,9 @@ def run(archive: Path, original_path: Path):
         "signed_or_deployed": False,
         "operational_ml_p0": "NO_GO",
     }
+    if cross_source is not None:
+        result["external_uwf_transfer_stress"] = cross_source
+    return result
 
 
 def main():
@@ -221,10 +231,11 @@ def main():
     p.add_argument("--archive", type=Path, required=True)
     p.add_argument("--original-model", type=Path, required=True)
     p.add_argument("--report", type=Path, required=True)
+    p.add_argument("--uwf-external-csv", type=Path)
     args = p.parse_args()
     if args.report.exists() or args.report.is_symlink():
         p.error("Refuse to overwrite diagnostic evidence")
-    result = run(args.archive, args.original_model)
+    result = run(args.archive, args.original_model, args.uwf_external_csv)
     args.report.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(args.report, os.O_CREAT | os.O_WRONLY | os.O_EXCL, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as dest:
