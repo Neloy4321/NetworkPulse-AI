@@ -7,6 +7,8 @@ on:
       - 'networkpulse/evaluation/iot_sfc_locked_later_days.py'
       - 'tests/test_iot_sfc_locked_later_days.py'
       - 'docs/P0_IOT_SFC_EXTRA_TREES_LATER_DAY_TEST.md'
+      - 'docs/P0_IOT_SFC_V7_APR15_17_LOCKED_RECALL_FAILURE.json'
+      - 'docs/P0_ML_ACCEPTANCE_RESULT_AND_GATES_20261023.md'
       - '.github/workflows/p0-iot-sfc-later-day-locked.yml'
   push:
     branches: [main]
