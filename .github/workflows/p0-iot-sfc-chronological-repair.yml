@@ -1,0 +1,98 @@
+name: P0 IoT-SFC forward-day FPR repair prospective April12+ test
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'networkpulse/evaluation/iot_sfc_chronological_fpr.py'
+      - 'tests/test_iot_sfc_chronological_fpr.py'
+      - '.github/workflows/p0-iot-sfc-chronological-repair.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  authentic-april-forward-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install existing project test runtime
+        run: python -m pip install -e '.[dev]'
+      - name: Lint and unit tests before target access
+        run: |
+          set -euo pipefail
+          python -m ruff check networkpulse/evaluation/iot_sfc_chronological_fpr.py tests/test_iot_sfc_chronological_fpr.py
+          python -m pytest -v tests/test_iot_sfc_chronological_fpr.py
+      - name: Retrieve SHA-locked baseline from same repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p private-old-model private-source aggregate-evidence private-new-model
+          gh run download 38909855312 --repo Neloy4321/NetworkPulse-AI \
+            --name v2-unsigned-source-calibrated-candidate --dir private-old-model
+          test "$(sha256sum private-old-model/research-only-v2-calibrated.joblib | cut -d' ' -f1)" = \
+            cd239783fd4318c0c4e897f1d451c2d5af4b42132979c79a4e489df626f538a5
+      - name: Retrieve exactly original public IoT-SFC v7 ZIP
+        run: |
+          set -euo pipefail
+          curl -fLSs --retry 2 --retry-delay 7 --connect-timeout 30 \
+            --max-time 1600 -o private-source/iot_dataset_v7.zip \
+            'https://zenodo.org/records/23371775/files/iot_dataset_v7.zip?download=1'
+          test "$(stat -c '%s' private-source/iot_dataset_v7.zip)" = 776500807
+          test "$(sha256sum private-source/iot_dataset_v7.zip | cut -d' ' -f1)" = \
+            070b1356e5bd296e584109fae79139cfe0f20ff4790f69e42994d67362cb9f62
+      - name: Fit Apr3-8 calibrate Apr10, score future April12+ only
+        run: |
+          set -euo pipefail
+          OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=2 \
+            python -m networkpulse.evaluation.iot_sfc_chronological_fpr \
+              --archive private-source/iot_dataset_v7.zip \
+              --baseline private-old-model/research-only-v2-calibrated.joblib \
+              --report aggregate-evidence/iot-sfc-forward-day-numerical.json \
+              --candidate-out private-new-model/unsigned-research-day-fenced.joblib
+      - name: Fail closed on false acceptance or selection leakage
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('aggregate-evidence/iot-sfc-forward-day-numerical.json').read_text())
+          assert r['status'] in (
+              'SOURCE_DAY_DEV_NO_GO_NO_TEST_UNBLINDED',
+              'CHRONOLOGICALLY_FENCED_SAME_LAB_RESEARCH_TRANSFER')
+          assert r['full_operational_ml_p0']=='NO_GO'
+          if r['status']=='CHRONOLOGICALLY_FENCED_SAME_LAB_RESEARCH_TRANSFER':
+              assert r['future_test_labels_never_used_to_select_model_or_cutoff'] is True
+              assert r['human_adjudicated_ground_truth'] is False
+              assert r['original_baseline_threshold'] == .20
+              assert r['pointwise_research_gate_independently_verified'] is False
+          print('Forward-day laboratory evaluation; no production acceptance')
+          PY
+      - name: Remove original model and raw archive on failure or success
+        if: always()
+        run: |
+          rm -f private-old-model/research-only-v2-calibrated.joblib
+          rm -f private-source/iot_dataset_v7.zip
+      - name: Save aggregate performance report only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iotsfc-v7-fpr-repair-Apr12-plus-forward-day-metrics
+          path: aggregate-evidence/iot-sfc-forward-day-numerical.json
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Separate unsigned RESEARCH candidate, never a production release
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iotsfc-v7-timefenced-unsigned-RESEARCH-model
+          path: private-new-model/unsigned-research-day-fenced.joblib
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Purge candidate binary from isolated runner
+        if: always()
+        run: rm -f private-new-model/unsigned-research-day-fenced.joblib
