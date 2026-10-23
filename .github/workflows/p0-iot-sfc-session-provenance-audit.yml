@@ -1,0 +1,77 @@
+name: P0 IoT-SFC official attack-session provenance guard
+
+on:
+  pull_request:
+    branches: [main, feature/p0-mqtt-recall-repair-20261023]
+    paths:
+      - 'networkpulse/evaluation/iot_sfc_session_window_audit.py'
+      - 'tests/test_iot_sfc_session_window_audit.py'
+      - '.github/workflows/p0-iot-sfc-session-provenance-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  official-session-log-provenance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install pinned project test dependencies
+        run: python -m pip install -e '.[dev]'
+      - name: Lint and test zero-PII official-window contract
+        run: |
+          python -m ruff check networkpulse/evaluation/iot_sfc_session_window_audit.py tests/test_iot_sfc_session_window_audit.py
+          python -m pytest -q tests/test_iot_sfc_session_window_audit.py
+      - name: Download exact small official source attack-session log
+        run: |
+          set -euo pipefail
+          mkdir -p private-log aggregate
+          curl -fLSs --retry 2 --retry-delay 5 --max-time 180 \
+            -o private-log/all_attacks_logs.json \
+            'https://zenodo.org/records/23371775/files/all_attacks_logs.json?download=1'
+          test "$(sha256sum private-log/all_attacks_logs.json | cut -d' ' -f1)" = \
+            c9ebc4a4760a84bc9c744c25cdbd51f5ae9b9259b03a983b5a5e9dcce8f612d0
+      - name: Aggregate producer sessions without endpoints or label certification
+        run: |
+          python - <<'PY'
+          from collections import Counter
+          import json
+          from pathlib import Path
+          from networkpulse.evaluation.iot_sfc_session_window_audit import load_exact_official_log
+
+          sessions = load_exact_official_log(Path('private-log/all_attacks_logs.json'))
+          summary = {
+              'status': 'OFFICIAL_SOURCE_PROVENANCE_ONLY_NOT_HUMAN_LABEL_TRUTH',
+              'session_count': len(sessions),
+              'zero_duration_windows': sum(s.start_utc == s.end_utc for s in sessions),
+              'sessions_by_family': dict(sorted(Counter(s.family for s in sessions).items())),
+              'sessions_by_start_utc_date': dict(sorted(Counter(
+                  s.start_utc.date().isoformat() for s in sessions).items())),
+              'producer_labels_independently_adjudicated': False,
+              'raw_source_or_destination_identifiers_exported': False,
+              'operational_ml_p0': 'NO_GO',
+          }
+          assert summary['zero_duration_windows'] == 10
+          assert summary['session_count'] == 302
+          Path('aggregate/iotsfc-official-session-provenance.json').write_text(
+              json.dumps(summary, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+          print(json.dumps(summary, sort_keys=True))
+          PY
+      - name: Remove raw source endpoint metadata
+        if: always()
+        run: rm -f private-log/all_attacks_logs.json
+      - name: Upload aggregate-only producer metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p0-iotsfc-source-attack-session-provenance-aggregate-only
+          path: aggregate/iotsfc-official-session-provenance.json
+          if-no-files-found: ignore
+          retention-days: 14
