@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "status": "APR15_17_LOCKED_SAME_LAB_RESEARCH_RECALL_NO_GO",
+  "date": "2026-10-23",
+  "model_sha256": "ecc320bc693481fc45b143b48ffbebcb117899e888e4687930f3361501af6fa1",
+  "model_threshold": 0.9,
+  "source_original_zip_sha256": "070b1356e5bd296e584109fae79139cfe0f20ff4790f69e42994d67362cb9f62",
+  "source_runner": 39925211304,
+  "source_artifact_id": 12488319488,
+  "source_report_filename": "iot-sfc-apr15-17-same-lab-locked.json",
+  "source_report_sha256": "5c3ff1101a64ddab20ac45229122ec12c4cd5f13bf47561f06af3f2e5bafc004",
+  "source_prefix_excluded": 450000,
+  "raw_rows_scanned_after_prefix": 9000000,
+  "source_time_fence_days": [
+    "2025-04-15",
+    "2025-04-16",
+    "2025-04-17"
+  ],
+  "max_scored_per_day": 60000,
+  "test_support": 156362,
+  "confusion": {
+    "tn": 155221,
+    "fp": 119,
+    "fn": 432,
+    "tp": 590
+  },
+  "benign": 155340,
+  "attack": 1022,
+  "fpr": 0.000766061542423072,
+  "fpr_wilson_upper_95": 0.0009165432860454134,
+  "recall": 0.5772994129158513,
+  "recall_wilson_lower_95": 0.5467794832073619,
+  "quality": {
+    "fpr_wilson_upper_95_max": 0.05,
+    "recall_wilson_lower_95_min": 0.8,
+    "fpr_gate_pass": true,
+    "recall_gate_pass": false,
+    "combined_gate_pass": false
+  },
+  "per_day": {
+    "2025-04-15": {
+      "benign": 59431,
+      "attack": 569,
+      "tn": 59387,
+      "fp": 44,
+      "fn": 419,
+      "tp": 150,
+      "recall": 0.26362038664323373,
+      "recall_lower_95": 0.22909034565819775,
+      "fpr": 0.0007403543605189211
+    },
+    "2025-04-16": {
+      "benign": 59348,
+      "attack": 1,
+      "tn": 59337,
+      "fp": 11,
+      "fn": 0,
+      "tp": 1,
+      "recall_support_insufficient": true
+    },
+    "2025-04-17": {
+      "benign": 36561,
+      "attack": 452,
+      "tn": 36497,
+      "fp": 64,
+      "fn": 13,
+      "tp": 439,
+      "recall": 0.9712389380530974,
+      "recall_lower_95": 0.9514192424385741,
+      "fpr": 0.0017504991657777413
+    }
+  },
+  "training_on_later_dates": false,
+  "threshold_retuned_on_later_dates": false,
+  "sampling_limitations": "FIRST_60000_PER_DAY_ELIGIBLE_WITHIN_FIXED_9M_SOURCE_SCAN",
+  "producer_labels_independently_human_verified": false,
+  "independent_source_family_or_site": false,
+  "cluster_aware_confidence_verified": false,
+  "operator_approved_signature": false,
+  "real_active_deployment_verified": false,
+  "operational_ml_p0": "NO_GO",
+  "historical_apr12_14_aggregate_pointwise_gate_pass": true,
+  "latest_later_day_aggregate_gate_pass": false,
+  "next_decision": "RESEARCH_RECALL_STABILITY_REPAIR_REQUIRED_WITH_NEW_RESERVED_HOLDOUT"
+}
