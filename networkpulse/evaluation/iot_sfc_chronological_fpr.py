@@ -20,6 +20,7 @@ from pathlib import Path
 
 import joblib
 import numpy as np
+import sklearn
 from sklearn.feature_extraction import DictVectorizer
 
 from networkpulse.evaluation.iot_sfc_domain_adapt_fpr import (
@@ -214,7 +215,7 @@ def collect_test_rows(reader, header, seen: set, train_groups: set,
     }
 
 
-def run(archive: Path, baseline_path: Path, output: Path):
+def run(archive: Path, baseline_path: Path, output: Path,\n        *, candidate_out: Path | None = None):
     if (archive.name != "iot_dataset_v7.zip"
             or archive.stat().st_size != TARGET_SIZE
             or digest(archive) != TARGET_SHA
@@ -292,7 +293,7 @@ def run(archive: Path, baseline_path: Path, output: Path):
         and results["fpr_upper_95"] <= RESEARCH_FPR_UPPER
         and results["recall_lower_95"] >= RESEARCH_RECALL_LOWER
     )
-    return {
+    report = {
         "status": "CHRONOLOGICALLY_FENCED_SAME_LAB_RESEARCH_TRANSFER",
         "model_candidate_kind": decision["selection"]["candidate"],
         "decision_threshold": decision["selection"]["cutoff"],
@@ -318,6 +319,32 @@ def run(archive: Path, baseline_path: Path, output: Path):
         "signed_production_model": False,
         "full_operational_ml_p0": "NO_GO",
     }
+    if candidate_out is not None:
+        if candidate_out.exists() or candidate_out.is_symlink():
+            raise ValueError("Do not overwrite independent candidate artifact")
+        bundle = {
+            "schema_version": 2,
+            "research_only": True,
+            "production_approved": False,
+            "feature_contract": "missingness_aware_flow_v2",
+            "dataset": "IoT-SFC v7 same-lab, user-reported citation-authorized",
+            "dataset_sha256": TARGET_SHA,
+            "training_dates": "through_2025-04-08",
+            "source_dev_date": "2025-04-10",
+            "heldout_test_dates_not_used_in_fit_or_selection": "2025-04-12_2025-04-17",
+            "cutoff": decision["selection"]["cutoff"],
+            "candidate": decision["selection"]["candidate"],
+            "vectorizer": encoder,
+            "estimator": chosen,
+            "scikit_learn_version": sklearn.__version__,
+        }
+        candidate_out.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(candidate_out, os.O_CREAT | os.O_WRONLY | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "wb") as stream:
+            joblib.dump(bundle, stream, compress=3)
+        report["unsigned_research_candidate_sha256"] = digest(candidate_out)
+        report["unsigned_research_candidate_status"] = "NOT_APPROVED_NOT_SIGNED"
+    return report
 
 
 def main():
@@ -325,8 +352,9 @@ def main():
     p.add_argument("--archive", type=Path, required=True)
     p.add_argument("--baseline", type=Path, required=True)
     p.add_argument("--report", type=Path, required=True)
+    p.add_argument("--candidate-out", type=Path)
     args = p.parse_args()
-    result = run(args.archive, args.baseline, args.report)
+    result = run(args.archive, args.baseline, args.report,\n                 candidate_out=args.candidate_out)
     args.report.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(args.report, os.O_CREAT | os.O_WRONLY | os.O_EXCL, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as dest:
