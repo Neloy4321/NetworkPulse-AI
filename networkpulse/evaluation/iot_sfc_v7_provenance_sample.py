@@ -15,6 +15,7 @@ import os
 import stat
 import zipfile
 from collections import Counter
+from itertools import islice
 from pathlib import Path
 
 from networkpulse.evaluation.iot_sfc_preregistration import (
@@ -31,8 +32,11 @@ DEFAULT_SAMPLE_ROWS = 100_000
 FIELD_MAX_CHARS = 131_072
 KNOWN_LOG_TYPES = frozenset({
     "conn.log", "dns.log", "http.log", "ssl.log", "ssh.log", "weird.log",
-    "files.log", "mqtt_connect.log", "mqtt_publish.log",
+    "files.log", "notice.log", "mqtt_connect.log", "mqtt_publish.log",
     "mqtt_subscribe.log", "mqtt_disconnect.log",
+    "conn", "dns", "http", "ssl", "ssh", "weird", "files", "notice",
+    "mqtt_connect", "mqtt_publish", "mqtt_subscribe", "mqtt_disconnect",
+    "conn_log", "dns_log", "http_log", "zeek_conn", "zeek_dns",
 })
 LABEL_CATEGORIES = {"0", "1"}
 MISSING = frozenset({"", "-", "(empty)", "(unset)"})
@@ -58,8 +62,10 @@ def _present(value: object) -> bool:
 
 
 def _classify_log_type(value: object) -> str:
-    value = str(value).strip() if value is not None else ""
-    return value if value in KNOWN_LOG_TYPES else "UNRECOGNIZED_OR_MISSING"
+    value = str(value).strip().lower() if value is not None else ""
+    if value in MISSING:
+        return "MISSING_OR_PLACEHOLDER"
+    return value if value in KNOWN_LOG_TYPES else "PRESENT_BUT_UNRECOGNIZED"
 
 
 def _classify_binary(value: object) -> str:
@@ -84,9 +90,7 @@ def summarize_rows(rows, *, max_rows: int = DEFAULT_SAMPLE_ROWS) -> dict:
     capture_days = Counter()
     missing_numeric = Counter()
     processed = 0
-    for row in rows:
-        if processed >= max_rows:
-            break
+    for row in islice(rows, max_rows):
         processed += 1
         if not isinstance(row, dict) or any(k is None for k in row):
             counts["invalid_row_column_count"] += 1
