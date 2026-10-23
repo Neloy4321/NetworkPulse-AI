@@ -34,7 +34,7 @@ def test_candidate_grid_is_source_only_and_predeclared():
 
 
 def test_source_split_hostgroup_disjoint():
-    flows = [example_flow(i) for i in range(250)]
+    flows = [example_flow(i) for i in range(1200)]
     y = np.array([i % 2 for i in range(len(flows))])
     fit, dev, counts = repair.source_split(flows, y)
     assert set(fit).isdisjoint(dev)
