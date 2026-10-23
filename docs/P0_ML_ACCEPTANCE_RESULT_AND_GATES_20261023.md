@@ -90,3 +90,39 @@ runs—not that an operator has accepted the model.
 
 **Release classification:** `AGGREGATE_NUMERICAL_RESEARCH_PASS`;
 `OPERATIONAL_ML_P0=NO_GO`.
+
+
+## Follow-up AFTER the original 12–14 April aggregate result: further-date Recall FAIL
+
+The separately pinned original ExtraTrees SHA `ecc320bc...1501af6fa1`, unchanged
+cutoff **0.90**, was evaluated on previously unscored **April 15–17** genuine
+IoT-SFC v7 `conn` rows in [Actions run #39925211304](https://github.com/Neloy4321/NetworkPulse-AI/actions/runs/39925211304).
+This run did **not** retrain or choose a new cutoff. The scan was predeclared:
+exclude the first 450,000 source rows, scan the next 9,000,000 raw rows and
+retain at most the first 60,000 eligible unique connections per target UTC day.
+Thus the result is a bounded later-day *same-lab* stress sample, not a
+random/population-complete independent-site test.
+
+Actual 156,362 scored, producer-label rows: **TN 155,221 / FP 119 /
+FN 432 / TP 590**. Observed benign **FPR 0.0766%**, Wilson upper95
+**0.0917%** (meets FPR criterion); attack **recall 57.7299%**,
+Wilson lower95 **54.6779%** (**FAILS >=80%**).
+
+Per-day **April 15 recall 26.36%** on 569 attacked flows (419 missed);
+April 16 has just 1 attacked flow and cannot establish recall; April 17
+recall 97.12% on 452 attacks. This domain/day shift is unacceptable as
+evidence of stable generalization. A low false-alarm rate alone cannot
+offset many missed attacks.
+
+Immutable summary and raw artifact SHA:
+[`P0_IOT_SFC_V7_APR15_17_LOCKED_RECALL_FAILURE.json`](P0_IOT_SFC_V7_APR15_17_LOCKED_RECALL_FAILURE.json).
+GitHub run artifact ID **12488319488**, inner aggregate JSON SHA-256
+`5c3ff1101a64ddab20ac45229122ec12c4cd5f13bf47561f06af3f2e5bafc004`.
+
+**Updated research validation conclusion:** previous Apr 12–14 aggregate
+pointwise numeric PASS remains a valid historical observation. But the
+following fixed later-day validation **FAILS Recall**, so no robust ML
+acceptance can be asserted even within this public laboratory family.
+No signed production promotion, operator receipt or independent field
+endorsement should occur. Future repair may use *exposed* days as
+development only; reserve new independent untouched test captures.
