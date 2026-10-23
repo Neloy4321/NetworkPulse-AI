@@ -1,5 +1,4 @@
 """Tests of frozen IoT-SFC source stem and exact metric/confusion handling."""
-import json
 
 import numpy as np
 import pytest
@@ -60,7 +59,6 @@ def test_one_class_returns_blocked_with_no_invented_confidence():
 
 def test_batch_uses_unmodified_probabilities_and_threshold():
     from collections import Counter, defaultdict
-    from types import SimpleNamespace
     class Encoder:
         def transform(self, records):
             assert len(records) == 4
