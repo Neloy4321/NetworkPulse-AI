@@ -107,6 +107,16 @@ def confusion(truth, predicted) -> Counter:
     })
 
 
+def frozen_or_repair(old_probability: float, new_probability: float,
+                     new_cutoff: float) -> bool:
+    """Research-only OR; the frozen cutoff remains fixed at its original 0.90.
+
+    This rule is *not* a selected or qualified production decision rule: the
+    April 15-17 labels were already exposed when this rule was examined.
+    """
+    return old_probability >= locked.CUTOFF or new_probability >= new_cutoff
+
+
 def candidate_selection(trained: dict, truth) -> dict:
     """Only unshared April 10 groups may select the candidate/cutoff."""
     n0, n1 = int(np.sum(truth == 0)), int(np.sum(truth == 1))
@@ -185,6 +195,9 @@ def fit_source(flows, y, families):
 def stress(reader, header, original, encoder, model, cutoff):
     day_counts = defaultdict(Counter)
     family_counts = defaultdict(Counter)
+    or_day_counts = defaultdict(Counter)
+    or_family_counts = defaultdict(Counter)
+    or_overlap = Counter()
     original_counts = Counter()
     stats = Counter()
     counts = Counter()
@@ -207,8 +220,19 @@ def stress(reader, header, original, encoder, model, cutoff):
             oldcell = ("tp" if y else "fp") if previous >= locked.CUTOFF else (
                 "fn" if y else "tn"
             )
+            old_flag = previous >= locked.CUTOFF
+            new_flag = current >= cutoff
+            fused_flag = frozen_or_repair(previous, current, cutoff)
+            fused_cell = ("tp" if y else "fp") if fused_flag else ("fn" if y else "tn")
             day_counts[day][cell] += 1
             family_counts[fam][cell] += 1
+            or_day_counts[day][fused_cell] += 1
+            or_family_counts[fam][fused_cell] += 1
+            or_overlap[("attack" if y else "benign") + "|" + (
+                "both" if old_flag and new_flag else
+                "frozen_only" if old_flag else
+                "repair_only" if new_flag else "neither"
+            )] += 1
             original_counts[oldcell] += 1
         flows.clear()
         labs.clear()
@@ -255,8 +279,15 @@ def stress(reader, header, original, encoder, model, cutoff):
     combined = Counter()
     for sub in day_counts.values():
         combined.update(sub)
+    or_combined = Counter()
+    for sub in or_day_counts.values():
+        or_combined.update(sub)
     if sum(combined.values()) != 156362:
         raise ValueError("Exposed stress sample support changed")
+    if sum(or_combined.values()) != sum(combined.values()):
+        raise ValueError("OR aggregation lost or duplicated research rows")
+    if or_combined["fn"] > original_counts["fn"]:
+        raise ValueError("OR rule unexpectedly lost a frozen-model positive")
     return {
         "source_scan_rows": stats["scanned"],
         "counts_by_day": dict(sorted(counts.items())),
@@ -266,6 +297,17 @@ def stress(reader, header, original, encoder, model, cutoff):
                               for k, v in sorted(day_counts.items())},
         "candidate_by_producer_family": {k: locked.summarize_confusion(v)
                                          for k, v in sorted(family_counts.items())},
+        "frozen_or_repair_research_only": {
+            "rule": "frozen_probability_ge_0.90_OR_repair_probability_ge_source_cutoff",
+            "selection_is_independently_qualified": False,
+            "already_exposed_same_lab_labels": True,
+            "combined": locked.summarize_confusion(or_combined),
+            "per_day": {k: locked.summarize_confusion(v)
+                        for k, v in sorted(or_day_counts.items())},
+            "by_producer_family": {k: locked.summarize_confusion(v)
+                                   for k, v in sorted(or_family_counts.items())},
+            "joint_prediction_overlap": dict(sorted(or_overlap.items())),
+        },
     }
 
 
