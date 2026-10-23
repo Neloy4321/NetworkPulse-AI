@@ -1,7 +1,6 @@
 """Fail-closed IoT-SFC v7 adapter tests; all rows below are synthetic fixtures."""
 from __future__ import annotations
 
-import copy
 
 import pytest
 
