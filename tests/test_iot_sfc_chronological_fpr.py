@@ -4,7 +4,6 @@ Tests are synthetic: no target CSV, private IP data or model binaries.
 """
 from __future__ import annotations
 
-from collections import Counter
 from datetime import date
 
 import numpy as np
