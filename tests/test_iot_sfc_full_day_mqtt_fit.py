@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from networkpulse.evaluation import iot_sfc_full_day_mqtt_fit as full
+from networkpulse.evaluation import iot_sfc_mqtt_repair as repair
 
 
 def test_reservoir_is_bounded_and_deterministic():
@@ -36,3 +37,12 @@ def test_source_date_fence_and_capacity():
     assert full.DEV_DAY.isoformat() == "2025-04-10"
     assert full.DEV_DAY < full.locked.TEST_DAYS[0]
     assert full.FIT_ATTACK_CAP_DAY_FAMILY < full.DEV_ATTACK_CAP_FAMILY
+
+
+def test_diagnostic_or_restores_either_model_positive_without_recutting_frozen():
+    assert repair.locked.CUTOFF == 0.90
+    assert repair.frozen_or_repair(0.91, 0.02, 0.80) is True
+    assert repair.frozen_or_repair(0.02, 0.81, 0.80) is True
+    assert repair.frozen_or_repair(0.90, 0.80, 0.80) is True
+    assert repair.frozen_or_repair(0.89, 0.79, 0.80) is False
+    assert repair.frozen_or_repair(0.50, 0.79, 0.80) is False
