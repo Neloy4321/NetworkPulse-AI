@@ -74,3 +74,29 @@ def test_source_and_candidate_digest_must_match_even_when_size_is_forged(
     monkeypatch.setattr(stage, "TARGET_SIZE", 1)
     with pytest.raises(ValueError, match="SHA mismatch"):
         stage.verify_source_and_model(source, model)
+
+
+def test_actual_later_day_artifact_failure_is_pinned_not_promoted():
+    from pathlib import Path
+    import json
+    j=json.loads((Path(__file__).resolve().parents[1] /
+        "docs/P0_IOT_SFC_V7_APR15_17_LOCKED_RECALL_FAILURE.json").read_text())
+    assert j["source_runner"] == 39925211304
+    assert j["model_sha256"] == stage.MODEL_SHA
+    assert j["model_threshold"] == stage.CUTOFF
+    assert j["test_support"] == 156362
+    assert j["quality"]["fpr_gate_pass"] is True
+    assert j["quality"]["recall_gate_pass"] is False
+    assert j["quality"]["combined_gate_pass"] is False
+    assert j["operational_ml_p0"] == "NO_GO"
+    values=Counter(j["confusion"])
+    measured=stage.summarize_confusion(values)
+    assert abs(measured["fpr"]-j["fpr"]) < 1e-12
+    assert abs(measured["recall"]-j["recall"]) < 1e-12
+    assert abs(measured["fpr_wilson_upper95"]-j["fpr_wilson_upper_95"]) < 1e-12
+    assert abs(measured["recall_wilson_lower95"]-j["recall_wilson_lower_95"]) < 1e-12
+    assert measured["numerical_gates_descriptively_met"] is False
+    assert sum(j["confusion"].values()) == j["test_support"]
+    assert sum(day["fn"] for day in j["per_day"].values()) == 432
+    assert j["per_day"]["2025-04-15"]["recall"] < .27
+    assert j["producer_labels_independently_human_verified"] is False
