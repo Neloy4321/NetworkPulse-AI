@@ -4,7 +4,6 @@ from __future__ import annotations
 from collections import Counter
 
 import numpy as np
-import pytest
 
 from networkpulse.evaluation import iot_sfc_domain_adapt_fpr as repair
 from networkpulse.evaluation.iot_sfc_frozen_score import adapt_v7_conn
