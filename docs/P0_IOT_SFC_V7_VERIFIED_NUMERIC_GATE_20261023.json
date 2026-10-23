@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "evidence_date": "2026-10-23",
+  "project": "NetworkPulse-AI",
+  "status": "AGGREGATE_POINTWISE_NUMERIC_RESEARCH_PASS_NOT_OPERATIONAL_ACCEPTANCE",
+  "source": {
+    "dataset": "IoT-SFC v7",
+    "zenodo_record": "https://zenodo.org/records/23371775",
+    "archive_sha256": "070b1356e5bd296e584109fae79139cfe0f20ff4790f69e42994d67362cb9f62",
+    "license_basis": "USER_REPORTED_CITATION_CONDITION",
+    "producer_labels_human_adjudicated": false,
+    "same_public_lab_as_training": true,
+    "training_through": "2025-04-08",
+    "calibration_date": "2025-04-10",
+    "prospective_test_from": "2025-04-12",
+    "declared_test_through": "2025-04-17",
+    "actual_scored_test_days": [
+      "2025-04-12",
+      "2025-04-13",
+      "2025-04-14"
+    ],
+    "training_dev_shared_hostpair_protocol_count": 121320,
+    "candidate_testing_data_used_for_selection": false
+  },
+  "model": {
+    "kind": "ExtraTreesClassifier",
+    "research_only": true,
+    "production_approved": false,
+    "artifact_sha256": "ecc320bc693481fc45b143b48ffbebcb117899e888e4687930f3361501af6fa1",
+    "feature_contract": "missingness_aware_flow_v2",
+    "fixed_cutoff": 0.9,
+    "baseline_rf_sha256": "cd239783fd4318c0c4e897f1d451c2d5af4b42132979c79a4e489df626f538a5",
+    "baseline_rf_cutoff": 0.2,
+    "operator_signature_verified": false
+  },
+  "gates": {
+    "fpr_wilson_upper_95_max": 0.05,
+    "recall_wilson_lower_95_min": 0.8,
+    "min_benign": 200,
+    "min_attack": 100,
+    "min_distinct_capture_days": 3
+  },
+  "results": {
+    "test_eligible_flows": 341759,
+    "confusion": {
+      "tn": 120141,
+      "fp": 5085,
+      "fn": 2547,
+      "tp": 213986
+    },
+    "benign": 125226,
+    "attack": 216533,
+    "fpr": 0.0406065832973983,
+    "fpr_wilson_upper_95": 0.041713943846645854,
+    "recall": 0.9882373587397764,
+    "recall_wilson_lower_95": 0.987774500221376,
+    "aggregate_pointwise_numeric_gate_pass": true,
+    "per_day": {
+      "2025-04-12": {
+        "benign": 61018,
+        "attack": 0,
+        "fp": 585,
+        "tn": 60433,
+        "fn": 0,
+        "tp": 0,
+        "per_day_both_classes_supported": false
+      },
+      "2025-04-13": {
+        "benign": 64207,
+        "attack": 216533,
+        "fp": 4500,
+        "tn": 59707,
+        "fn": 2547,
+        "tp": 213986,
+        "fpr": 0.07008581618826608,
+        "fpr_upper95": 0.07208630943144388,
+        "per_day_fpr_gate_pass": false
+      },
+      "2025-04-14": {
+        "benign": 1,
+        "attack": 0,
+        "fp": 0,
+        "tn": 1,
+        "fn": 0,
+        "tp": 0,
+        "per_day_both_classes_supported": false
+      }
+    },
+    "baselines": {
+      "frozen_rf_on_identical_rows_fpr": 0.9477903949659017,
+      "frozen_rf_on_identical_rows_recall": 0.9803955978996273
+    },
+    "per_day_robustness_gate_pass": false,
+    "distinct_days_with_both_classes": 1,
+    "unseen_training_hostpair_attack_support": 0,
+    "flow_wilson_bounds_ignore_day_and_site_clustering": true
+  },
+  "provenance": {
+    "github_pr": 41,
+    "original_test_workflow_run": 39921326610,
+    "aggregate_result_artifact_id": 12487502789,
+    "aggregate_result_member": "iot-sfc-forward-day-numerical.json",
+    "aggregate_result_sha256": "4c80e0a068cd623edbf612daf38037544fd1f1908fba70392c4e6b525920dc49",
+    "model_artifact_id": 12487143959,
+    "model_artifact_member": "unsigned-research-day-fenced.joblib",
+    "source_code_main_sha": "775a23214df09f08e50c2bb4fa10e0abdde45fa4",
+    "post_merge_source_workflow_run": 39922303602,
+    "post_merge_ci_passed": true
+  },
+  "release_decision": {
+    "research_aggregate_numerical_criterion": "PASS",
+    "research_multi_day_and_independent_label_qualification": "NOT_ESTABLISHED",
+    "independent_field_site": "NOT_VERIFIED",
+    "human_label_ground_truth": "NOT_VERIFIED",
+    "signed_operator_model": "NOT_AVAILABLE",
+    "active_https_oidc_with_live_sensor_parity": "NOT_VERIFIED",
+    "production_p0": "NO_GO",
+    "false_claims_forbidden": true
+  }
+}
