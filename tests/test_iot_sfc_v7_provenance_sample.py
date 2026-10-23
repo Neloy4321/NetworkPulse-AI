@@ -43,7 +43,7 @@ def test_counts_only_no_raw_ip_uid_or_attack_family_exported():
     out = audit.summarize_rows(iter(rows), max_rows=10)
     assert out["rows_inspected"] == 4
     assert out["log_types_aggregate"] == {
-        "UNRECOGNIZED_OR_MISSING": 1,
+        "PRESENT_BUT_UNRECOGNIZED": 1,
         "conn.log": 2,
         "dns.log": 1,
     }
@@ -125,7 +125,7 @@ def test_missing_and_negative_flow_counters_fail_closed():
 
 def test_no_unknown_source_log_names_leak_to_aggregate():
     result = audit.summarize_rows([_row(log_type="confidential-logs-123")])
-    assert result["log_types_aggregate"] == {"UNRECOGNIZED_OR_MISSING": 1}
+    assert result["log_types_aggregate"] == {"PRESENT_BUT_UNRECOGNIZED": 1}
     assert result["conn_adapter_outcomes"] == {}
 
 
@@ -134,3 +134,23 @@ def test_development_labels_not_used_for_training_or_prediction():
     assert out["not_an_unbiased_dataset_prevalence_estimate"]
     assert not out["numerical_ml_acceptance_calculated"]
     assert not out["labels_independently_adjudicated"]
+
+
+def test_known_short_source_aliases_are_reported_but_not_promoted():
+    result = audit.summarize_rows(
+        [_row(log_type="conn"), _row(log_type="dns"), _row(log_type="CONN")]
+    )
+    assert result["log_types_aggregate"] == {"conn": 2, "dns": 1}
+    assert result["conn_adapter_outcomes"] == {}
+    assert result["not_exact_conn_log_count"] == 3
+
+
+def test_empty_log_type_not_confused_with_unrecognized_nonempty():
+    result = audit.summarize_rows([
+        _row(log_type=""), _row(log_type="-"),
+        _row(log_type="secret-private-logs"),
+    ])
+    assert result["log_types_aggregate"] == {
+        "MISSING_OR_PLACEHOLDER": 2,
+        "PRESENT_BUT_UNRECOGNIZED": 1,
+    }
