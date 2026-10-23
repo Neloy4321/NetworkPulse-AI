@@ -1,0 +1,102 @@
+name: P0 Genuine FPR repair with source-domain RF / ExtraTrees
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'networkpulse/evaluation/iot_sfc_domain_adapt_fpr.py'
+      - 'tests/test_iot_sfc_domain_adapt_fpr.py'
+      - '.github/workflows/p0-iot-sfc-domain-fpr-repair.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'networkpulse/evaluation/iot_sfc_domain_adapt_fpr.py'
+      - 'tests/test_iot_sfc_domain_adapt_fpr.py'
+      - '.github/workflows/p0-iot-sfc-domain-fpr-repair.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  research-source-repair-real-later-comparison:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install exact project model runtime and tests
+        run: python -m pip install -e '.[dev]'
+      - name: Validate source-only experiment and reject cheating
+        run: |
+          python -m ruff check \
+            networkpulse/evaluation/iot_sfc_domain_adapt_fpr.py \
+            tests/test_iot_sfc_domain_adapt_fpr.py
+          python -m pytest -q tests/test_iot_sfc_domain_adapt_fpr.py
+      - name: Retrieve original frozen baseline RF artifact for fair identical-row comparison
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p private-baseline aggregate-only
+          gh run download 38909855312 --repo Neloy4321/NetworkPulse-AI \
+            --name v2-unsigned-source-calibrated-candidate \
+            --dir private-baseline
+          test -f private-baseline/research-only-v2-calibrated.joblib
+          test "$(sha256sum private-baseline/research-only-v2-calibrated.joblib | cut -d' ' -f1)" = \
+            cd239783fd4318c0c4e897f1d451c2d5af4b42132979c79a4e489df626f538a5
+      - name: Download SHA-pinned official IoT-SFC v7 archive for real FPR model repair
+        run: |
+          set -euo pipefail
+          mkdir -p private-source
+          curl -fLSs --retry 2 --retry-delay 8 --connect-timeout 30 \
+            --max-time 1600 \
+            --output private-source/iot_dataset_v7.zip \
+            'https://zenodo.org/records/23371775/files/iot_dataset_v7.zip?download=1'
+          test "$(stat -c '%s' private-source/iot_dataset_v7.zip)" = 776500807
+          test "$(sha256sum private-source/iot_dataset_v7.zip | cut -d' ' -f1)" = \
+            070b1356e5bd296e584109fae79139cfe0f20ff4790f69e42994d67362cb9f62
+      - name: Train on EXPOSED first 200k; fix source-dev cutoff; evaluate later 250k once
+        run: |
+          set -euo pipefail
+          OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=2 \
+          python -m networkpulse.evaluation.iot_sfc_domain_adapt_fpr \
+            --archive private-source/iot_dataset_v7.zip \
+            --baseline private-baseline/research-only-v2-calibrated.joblib \
+            --report aggregate-only/real-iotsfc-fpr-repair-comparison.json
+      - name: Fail closed if external comparison mislabeled as full acceptance
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          e = json.loads(Path(
+              'aggregate-only/real-iotsfc-fpr-repair-comparison.json'
+          ).read_text())
+          assert e['dataset_sha256'] == '070b1356e5bd296e584109fae79139cfe0f20ff4790f69e42994d67362cb9f62'
+          assert e['original_model_sha256'] == 'cd239783fd4318c0c4e897f1d451c2d5af4b42132979c79a4e489df626f538a5'
+          assert e['baseline_cutoff'] == .20
+          assert e['fit_prefix_rows'] == 200000
+          assert e['later_comparison_end_row'] == 450000
+          assert e['selection_used_later_segment_labels'] is False
+          assert e['target_same_public_laboratory_no_independent_site'] is True
+          assert e['producer_labels_independently_adjudicated'] is False
+          assert e['operational_ml_p0'] == 'NO_GO'
+          print('Measured repair candidate vs baseline on identical later rows; no acceptance claim')
+          PY
+      - name: Destroy all unsigned executable models and raw source data
+        if: always()
+        run: |
+          rm -f private-source/iot_dataset_v7.zip
+          rm -f private-baseline/research-only-v2-calibrated.joblib
+      - name: Upload only aggregate FPR/Recall and split evidence, no raw traffic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iotsfc-source-adapted-fpr-repair-real-later-250k-no-raw
+          path: aggregate-only/real-iotsfc-fpr-repair-comparison.json
+          if-no-files-found: ignore
+          retention-days: 14
