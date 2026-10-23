@@ -1,0 +1,88 @@
+name: P0 independent UWF Zeek source frozen research evaluation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'networkpulse/evaluation/uwf_zeek_external_frozen.py'
+      - 'tests/test_uwf_zeek_external_frozen.py'
+      - '.github/workflows/p0-uwf-zeek-cross-source-frozen.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  independent-uwf-zeek-research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install pinned project dependencies
+        run: python -m pip install -e '.[dev]'
+      - name: Validate external adapter and no-label-as-feature tests
+        run: |
+          python -m ruff check networkpulse/evaluation/uwf_zeek_external_frozen.py tests/test_uwf_zeek_external_frozen.py
+          python -m pytest -q tests/test_uwf_zeek_external_frozen.py
+      - name: Retrieve only previously SHA-locked historical ExtraTrees artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p private-model private-source aggregate
+          gh run download 39921326610 --repo Neloy4321/NetworkPulse-AI \
+            --name iotsfc-v7-timefenced-unsigned-RESEARCH-model \
+            --dir private-model
+          test "$(sha256sum private-model/unsigned-research-day-fenced.joblib | cut -d' ' -f1)" = \
+            ecc320bc693481fc45b143b48ffbebcb117899e888e4687930f3361501af6fa1
+      - name: Acquire CC BY UWF independent university Zeek subset by exact SHA
+        run: |
+          set -euo pipefail
+          curl -fLSs --retry 2 --retry-delay 5 --max-time 180 \
+            -o private-source/uwf-zeekdata22-discovery.csv \
+            'https://datasets.uwf.edu/data/UWF-ZeekData22/csv/part-00000-15e3dd03-ea76-429e-a52a-ce96a90517f9-c000.csv'
+          test "$(stat -c %s private-source/uwf-zeekdata22-discovery.csv)" = 2057705
+          test "$(sha256sum private-source/uwf-zeekdata22-discovery.csv | cut -d' ' -f1)" = \
+            991d7cd72f299484ab2892df21a02cd838fea0dce3e92eab6a406c69f78e79c2
+      - name: Score frozen original candidate without fitting or recalibration
+        run: |
+          OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=2 \
+          python -m networkpulse.evaluation.uwf_zeek_external_frozen \
+            --csv private-source/uwf-zeekdata22-discovery.csv \
+            --model private-model/unsigned-research-day-fenced.joblib \
+            --report aggregate/uwf-zeek22-frozen-unqualified.json
+      - name: Fail closed on false external acceptance or calendar leakage
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r = json.loads(Path('aggregate/uwf-zeek22-frozen-unqualified.json').read_text())
+          assert r['operational_ml_p0'] == 'NO_GO'
+          assert r['trained_or_selected_on_external_source'] is False
+          assert r['source_label_truth_independently_verified'] is False
+          assert r['model_exported_or_deployed'] is False
+          assert r['source_class_mixed_days'] == 0
+          assert r['source_label_date_confounding'] is True
+          assert r['raw_source_rows'] == 10490
+          assert r['duplicate_flow_rows_not_scored'] == 13
+          assert r['unique_scored_flows'] == 10477
+          print('Independent university source stress only; field P0 NO-GO')
+          PY
+      - name: Remove all raw Zeek identities and executable model
+        if: always()
+        run: |
+          rm -f private-source/uwf-zeekdata22-discovery.csv
+          rm -f private-model/unsigned-research-day-fenced.joblib
+      - name: Upload aggregate-only frozen cross-source evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p0-uwf-zeek22-independent-source-frozen-aggregate-only
+          path: aggregate/uwf-zeek22-frozen-unqualified.json
+          if-no-files-found: ignore
+          retention-days: 14
