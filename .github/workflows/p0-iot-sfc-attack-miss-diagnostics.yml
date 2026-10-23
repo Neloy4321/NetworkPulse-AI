@@ -1,0 +1,88 @@
+name: P0 IoT-SFC exposed attack-miss diagnostics
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'networkpulse/evaluation/iot_sfc_attack_miss_diagnostics.py'
+      - 'tests/test_iot_sfc_attack_miss_diagnostics.py'
+      - '.github/workflows/p0-iot-sfc-attack-miss-diagnostics.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  replay-existing-failure-no-model-tuning:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install pinned-model compatible dependencies
+        run: python -m pip install -e '.[dev]'
+      - name: Lint and test the aggregate-only diagnostic
+        run: |
+          python -m ruff check networkpulse/evaluation/iot_sfc_attack_miss_diagnostics.py tests/test_iot_sfc_attack_miss_diagnostics.py
+          python -m pytest -q tests/test_iot_sfc_attack_miss_diagnostics.py tests/test_iot_sfc_locked_later_days.py
+      - name: Retrieve SHA-pinned pre-existing unsigned research model
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p private-model aggregate
+          gh run download 39921326610 --repo Neloy4321/NetworkPulse-AI \
+            --name iotsfc-v7-timefenced-unsigned-RESEARCH-model \
+            --dir private-model
+          test -f private-model/unsigned-research-day-fenced.joblib
+          test "$(sha256sum private-model/unsigned-research-day-fenced.joblib | cut -d' ' -f1)" = \
+            ecc320bc693481fc45b143b48ffbebcb117899e888e4687930f3361501af6fa1
+      - name: Retrieve SHA-pinned original authorized public lab dataset
+        run: |
+          set -euo pipefail
+          mkdir -p private-archive
+          curl -fLSs --retry 2 --retry-delay 7 --connect-timeout 30 \
+            --max-time 1400 \
+            -o private-archive/iot_dataset_v7.zip \
+            'https://zenodo.org/records/23371775/files/iot_dataset_v7.zip?download=1'
+          test "$(stat -c %s private-archive/iot_dataset_v7.zip)" = 776500807
+          test "$(sha256sum private-archive/iot_dataset_v7.zip | cut -d' ' -f1)" = \
+            070b1356e5bd296e584109fae79139cfe0f20ff4790f69e42994d67362cb9f62
+      - name: Replay 419 attack misses on exposed locked days
+        run: |
+          OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=2 \
+          python -m networkpulse.evaluation.iot_sfc_attack_miss_diagnostics \
+            --archive private-archive/iot_dataset_v7.zip \
+            --model private-model/unsigned-research-day-fenced.joblib \
+            --report aggregate/apr15-17-exposed-attack-miss-slices.json
+      - name: Refuse any output suggesting new test or operational acceptance
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('aggregate/apr15-17-exposed-attack-miss-slices.json').read_text())
+          assert report['immutable_cutoff_confusion'] == {'tn': 155221, 'fp': 119, 'fn': 432, 'tp': 590}
+          assert report['sample_replayed_exactly'] is True
+          assert report['new_holdout'] is False
+          assert report['candidate_retrained_or_tuned'] is False
+          assert report['operational_ml_p0'] == 'NO_GO'
+          assert report['labels'] == 'UNREVIEWED_PRODUCER_LABELS'
+          print('Exposed-day causal triage only; no new ML acceptance claim')
+          PY
+      - name: Remove raw dataset and unsigned executable model
+        if: always()
+        run: |
+          rm -f private-archive/iot_dataset_v7.zip
+          rm -f private-model/unsigned-research-day-fenced.joblib
+      - name: Upload privacy-bounded categorical aggregate only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p0-apr15-17-attack-miss-aggregate-only
+          path: aggregate/apr15-17-exposed-attack-miss-slices.json
+          if-no-files-found: ignore
+          retention-days: 14
