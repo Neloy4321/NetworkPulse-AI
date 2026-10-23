@@ -215,7 +215,8 @@ def collect_test_rows(reader, header, seen: set, train_groups: set,
     }
 
 
-def run(archive: Path, baseline_path: Path, output: Path,\n        *, candidate_out: Path | None = None):
+def run(archive: Path, baseline_path: Path, output: Path,
+        *, candidate_out: Path | None = None):
     if (archive.name != "iot_dataset_v7.zip"
             or archive.stat().st_size != TARGET_SIZE
             or digest(archive) != TARGET_SHA
@@ -354,7 +355,8 @@ def main():
     p.add_argument("--report", type=Path, required=True)
     p.add_argument("--candidate-out", type=Path)
     args = p.parse_args()
-    result = run(args.archive, args.baseline, args.report,\n                 candidate_out=args.candidate_out)
+    result = run(args.archive, args.baseline, args.report,
+                 candidate_out=args.candidate_out)
     args.report.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(args.report, os.O_CREAT | os.O_WRONLY | os.O_EXCL, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as dest:
