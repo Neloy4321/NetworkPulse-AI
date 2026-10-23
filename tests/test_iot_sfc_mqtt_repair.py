@@ -54,6 +54,24 @@ def test_source_family_is_small_approved_taxonomy():
     assert repair.family({"type_of_attack": "1.2.3.4"}) == "other_attack_family"
 
 
+def test_source_dev_error_profile_is_aggregate_only():
+    benign = sample(dst_port=1883, conn_state="S0")
+    attack = sample(dst_port=80, conn_state="SF")
+    flows = [benign, attack]
+    result = repair.source_dev_error_profile(
+        flows, np.array([0, 1]), ["benign", "mqtt_malformed"],
+        [0, 1], np.array([0.99, 0.12]), 0.80,
+    )
+    assert result["false_positives"]["count"] == 1
+    assert result["false_positives"]["by_service"] == {"1883": 1}
+    assert result["false_negatives"]["by_producer_attack_family"] == {
+        "mqtt_malformed": 1,
+    }
+    assert result["false_positives"]["distinct_groups"] == 1
+    assert "192.0.2.8" not in str(result)
+    assert "secret-uid" not in str(result)
+
+
 def test_no_new_holdout_or_release_in_research_module():
     assert repair.FIT_LAST_DAY < repair.DEV_DAY < repair.locked.TEST_DAYS[0]
     assert "signed" not in repair.features_repair(sample())

@@ -144,6 +144,56 @@ def candidate_selection(trained: dict, truth) -> dict:
             "dev_benign": n0, "dev_attack": n1, "options": records}
 
 
+def source_dev_error_profile(flows, y, families, indices, probabilities, cutoff):
+    """Aggregate-only diagnostic; no IP, UID, timestamp or group hashes leave memory."""
+    false_positive = []
+    false_negative = []
+    benign_groups = set()
+    for idx, probability in zip(indices, probabilities):
+        actual = int(y[idx])
+        predicted = float(probability) >= cutoff
+        if actual == 0:
+            benign_groups.add(group_key(flows[idx]))
+            if predicted:
+                false_positive.append(idx)
+        elif not predicted:
+            false_negative.append(idx)
+
+    def aggregate(indices_to_report):
+        services = Counter()
+        states = Counter()
+        protocols = Counter()
+        group_sizes = Counter()
+        for idx in indices_to_report:
+            flow = flows[idx]
+            service = (str(flow.dst_port) if flow.dst_port in STABLE_PORTS
+                       else "other_port")
+            services[service] += 1
+            states[flow.conn_state if flow.conn_state in STATES else "other"] += 1
+            protocols[flow.proto] += 1
+            group_sizes[group_key(flow)] += 1
+        return {
+            "count": len(indices_to_report),
+            "by_service": dict(services.most_common(12)),
+            "by_conn_state": dict(states.most_common(12)),
+            "by_protocol": dict(protocols.most_common(12)),
+            "distinct_groups": len(group_sizes),
+            "largest_one_group_row_count": max(group_sizes.values(), default=0),
+        }
+
+    return {
+        "cutoff": cutoff,
+        "benign_development_distinct_groups": len(benign_groups),
+        "false_positives": aggregate(false_positive),
+        "false_negatives": {
+            **aggregate(false_negative),
+            "by_producer_attack_family": dict(Counter(families[i] for i in false_negative)),
+        },
+        "raw_network_identifiers_exported": False,
+        "independent_human_ground_truth": False,
+    }
+
+
 def fit_source(flows, y, families):
     fit_idx = [i for i, f in enumerate(flows) if f.timestamp.date() <= FIT_LAST_DAY]
     day_dev = [i for i, f in enumerate(flows) if f.timestamp.date() == DEV_DAY]
@@ -165,6 +215,18 @@ def fit_source(flows, y, families):
             class_weight="balanced_subsample", random_state=SEED, n_jobs=2,
         ),
     }
+    # Predeclared cost-sensitive research grid for systematic source-DEV FPR
+    # failures. Training uses FIT labels only; external test is never scored
+    # until every candidate, cutoff and the source-DEV decision are final.
+    for benign_weight in (5.0, 20.0):
+        for name, classifier in (
+            ("extra", ExtraTreesClassifier), ("rf", RandomForestClassifier)
+        ):
+            options[f"{name}_benign_{int(benign_weight)}"] = classifier(
+                n_estimators=160, max_depth=18, min_samples_leaf=5,
+                class_weight={0: benign_weight, 1: 1.0},
+                random_state=SEED, n_jobs=2,
+            )
     trained = {name: model.fit(Xfit, y[fit_idx]) for name, model in options.items()}
     scores = ({name: model.predict_proba(Xdev)[:, 1]
                for name, model in trained.items()} if Xdev is not None else {})
@@ -188,6 +250,11 @@ def fit_source(flows, y, families):
         "chosen_candidate": selected_name,
         "chosen_cutoff": selected_cutoff,
         "chosen_source_dev_qualified": choice is not None,
+        "research_benign_class_weights_tested": [1.0, 5.0, 20.0],
+        "source_dev_aggregate_error_profiles_at_0_80": {
+            name: source_dev_error_profile(flows, y, families, dev_idx, probs, 0.80)
+            for name, probs in scores.items()
+        },
     }
     return vectorizer, trained[selected_name], selected_cutoff, stats
 
