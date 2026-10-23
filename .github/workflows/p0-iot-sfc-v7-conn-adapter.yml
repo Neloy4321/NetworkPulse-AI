@@ -1,0 +1,55 @@
+name: P0 IoT-SFC v7 strict Zeek conn adapter tests
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'networkpulse/evaluation/iot_sfc_v7_conn_adapter.py'
+      - 'tests/test_iot_sfc_v7_conn_adapter.py'
+      - 'docs/P0_IOT_SFC_V7_ADAPTER_AND_LABEL_REVIEW.md'
+      - '.github/workflows/p0-iot-sfc-v7-conn-adapter.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'networkpulse/evaluation/iot_sfc_v7_conn_adapter.py'
+      - 'tests/test_iot_sfc_v7_conn_adapter.py'
+      - 'docs/P0_IOT_SFC_V7_ADAPTER_AND_LABEL_REVIEW.md'
+      - '.github/workflows/p0-iot-sfc-v7-conn-adapter.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  strict-only-synthetic:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12']
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install project and tests
+        run: python -m pip install -e '.[dev]'
+      - name: Lint strict source adapter and tests
+        run: >-
+          python -m ruff check
+          networkpulse/evaluation/iot_sfc_v7_conn_adapter.py
+          tests/test_iot_sfc_v7_conn_adapter.py
+      - name: Test exact FlowV2 parity, log discrimination, and label independence
+        run: python -m pytest -v tests/test_iot_sfc_v7_conn_adapter.py
+      - name: Check unchanged frozen candidate and no raw target committed
+        run: |
+          python - <<'PY'
+          from networkpulse.evaluation.iot_sfc_v7_conn_adapter import (
+              MODEL_SHA, MODEL_CUTOFF,
+          )
+          assert MODEL_SHA == "cd239783fd4318c0c4e897f1d451c2d5af4b42132979c79a4e489df626f538a5"
+          assert MODEL_CUTOFF == .20
+          import pathlib
+          assert not pathlib.Path("iot_dataset_v7.csv").exists()
+          assert not pathlib.Path("iot_dataset_v7.zip").exists()
+          print("Synthetic-only source mapping; frozen holdout still unscored. ML P0 NO_GO")
+          PY
