@@ -23,12 +23,12 @@ import numpy as np
 from sklearn.feature_extraction import DictVectorizer
 
 from networkpulse.evaluation.iot_sfc_domain_adapt_fpr import (
-    FIT_END, EVAL_END, MODEL_OPTIONS, FPR_DEV_UPPER_CAP,
-    RECALL_DEV_LOWER_GOAL, CUTOFFS, make_model, confusion, _limits,
+    EVAL_END, MODEL_OPTIONS, FPR_DEV_UPPER_CAP,
+    CUTOFFS, make_model, confusion, _limits,
     flow_id, group_key, read_partition,
 )
 from networkpulse.evaluation.iot_sfc_frozen_score import (
-    BASELINE_CUTOFF, digest, _quality, adapt_v7_conn,
+    CUTOFF as BASELINE_CUTOFF, digest, _quality, adapt_v7_conn,
 )
 from networkpulse.evaluation.iot_sfc_preregistration import (
     MODEL_SHA, TARGET_SHA, TARGET_SIZE,
@@ -107,21 +107,6 @@ def choose_on_exposed_apr10(train, train_y, dev, dev_y):
         "selection": selection,
         "candidate_summaries": candidate_summaries,
     }, candidates[selection["candidate"]][0], encoder
-
-
-def _predict_batch(new_model, encoder, baseline, rows, labels, days, unseen,
-                   main_conf, baseline_conf, per_day, by_group):
-    if not rows:
-        return
-    features = [features_v2(flow) for flow in rows]
-    new_scores = new_model.predict_proba(encoder.transform(features))[:, 1]
-    old_scores = baseline["estimator"].predict_proba(
-        baseline["vectorizer"].transform(features)
-    )[:, 1]
-    if (new_scores.shape != (len(rows),) or old_scores.shape != (len(rows),)
-            or not np.isfinite(new_scores).all() or not np.isfinite(old_scores).all()):
-        raise ValueError("Invalid frozen comparator/model scores")
-    raise NotImplementedError("Cutoff must be passed explicitly")
 
 
 def collect_test_rows(reader, header, seen: set, train_groups: set,
