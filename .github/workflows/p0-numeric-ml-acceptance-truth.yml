@@ -1,0 +1,63 @@
+name: P0 verified ML numeric evidence and release truth gate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docs/P0_IOT_SFC_V7_VERIFIED_NUMERIC_GATE_20261023.json'
+      - 'docs/P0_ML_ACCEPTANCE_RESULT_AND_GATES_20261023.md'
+      - 'networkpulse/evaluation/iot_sfc_numeric_gate_evidence.py'
+      - 'tests/test_iot_sfc_numeric_gate_evidence.py'
+      - '.github/workflows/p0-numeric-ml-acceptance-truth.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs/P0_IOT_SFC_V7_VERIFIED_NUMERIC_GATE_20261023.json'
+      - 'docs/P0_ML_ACCEPTANCE_RESULT_AND_GATES_20261023.md'
+      - 'networkpulse/evaluation/iot_sfc_numeric_gate_evidence.py'
+      - 'tests/test_iot_sfc_numeric_gate_evidence.py'
+      - '.github/workflows/p0-numeric-ml-acceptance-truth.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verified-aggregate-research-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install model-metric test dependencies
+        run: python -m pip install -e '.[dev]'
+      - name: Lint immutable evidence guard and negative-path tests
+        run: |
+          python -m ruff check \
+            networkpulse/evaluation/iot_sfc_numeric_gate_evidence.py \
+            tests/test_iot_sfc_numeric_gate_evidence.py
+      - name: Recalculate authentic confusion counts and Wilson confidence intervals
+        run: python -m networkpulse.evaluation.iot_sfc_numeric_gate_evidence
+      - name: Reject false operator, release, and independent-field acceptance
+        run: python -m pytest -v tests/test_iot_sfc_numeric_gate_evidence.py
+      - name: Explicitly preserve research vs operational acceptance distinction
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("docs/P0_IOT_SFC_V7_VERIFIED_NUMERIC_GATE_20261023.json")
+          j=json.loads(p.read_text())
+          assert j["results"]["aggregate_pointwise_numeric_gate_pass"] is True
+          assert j["results"]["per_day_robustness_gate_pass"] is False
+          assert j["release_decision"]["production_p0"] == "NO_GO"
+          assert j["model"]["operator_signature_verified"] is False
+          assert j["source"]["producer_labels_human_adjudicated"] is False
+          print("RESEARCH NUMERIC: PASS; OPERATIONAL ML P0: NO_GO")
+          PY
