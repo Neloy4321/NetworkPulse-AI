@@ -5,6 +5,7 @@ on:
     branches: [main, feature/p0-mqtt-recall-repair-20261023]
     paths:
       - 'networkpulse/evaluation/iot_sfc_full_day_mqtt_fit.py'
+      - 'networkpulse/evaluation/iot_sfc_mqtt_repair.py'
       - 'tests/test_iot_sfc_full_day_mqtt_fit.py'
       - '.github/workflows/p0-iot-sfc-full-source-mqtt-repair.yml'
   workflow_dispatch:
@@ -27,7 +28,7 @@ jobs:
         run: python -m pip install -e '.[dev]'
       - name: Lint and verify source-only deterministic sampling tests
         run: |
-          python -m ruff check networkpulse/evaluation/iot_sfc_full_day_mqtt_fit.py tests/test_iot_sfc_full_day_mqtt_fit.py
+          python -m ruff check networkpulse/evaluation/iot_sfc_full_day_mqtt_fit.py networkpulse/evaluation/iot_sfc_mqtt_repair.py tests/test_iot_sfc_full_day_mqtt_fit.py
           python -m pytest -q tests/test_iot_sfc_full_day_mqtt_fit.py tests/test_iot_sfc_mqtt_repair.py
       - name: Restore SHA-verified historical frozen research model
         env:
@@ -69,6 +70,10 @@ jobs:
           }
           assert r['source_ledger']['late_test_labels_inspected_during_source_fit'] is False
           assert r['new_prospective_holdout_used'] is False
+          fused = r['exposed_stress']['frozen_or_repair_research_only']
+          assert fused['selection_is_independently_qualified'] is False
+          assert fused['already_exposed_same_lab_labels'] is True
+          assert fused['combined']['confusion']['fn'] <= 432
           assert r['independently_reviewed_flow_labels'] is False
           assert r['signed_or_deployed'] is False
           assert r['operational_ml_p0'] == 'NO_GO'
