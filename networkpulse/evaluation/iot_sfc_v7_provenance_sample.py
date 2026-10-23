@@ -15,7 +15,6 @@ import os
 import stat
 import zipfile
 from collections import Counter
-from datetime import datetime, timezone
 from pathlib import Path
 
 from networkpulse.evaluation.iot_sfc_preregistration import (
