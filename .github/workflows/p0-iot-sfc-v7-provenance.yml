@@ -1,0 +1,93 @@
+name: P0 IoT-SFC v7 authentic bounded provenance (NO model scoring)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'networkpulse/evaluation/iot_sfc_v7_provenance_sample.py'
+      - 'tests/test_iot_sfc_v7_provenance_sample.py'
+      - 'docs/P0_IOT_SFC_V7_REAL_PROVENANCE_SAMPLE.md'
+      - '.github/workflows/p0-iot-sfc-v7-provenance.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'networkpulse/evaluation/iot_sfc_v7_provenance_sample.py'
+      - 'tests/test_iot_sfc_v7_provenance_sample.py'
+      - 'docs/P0_IOT_SFC_V7_REAL_PROVENANCE_SAMPLE.md'
+      - '.github/workflows/p0-iot-sfc-v7-provenance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verified-real-source-aggregate-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install project and test suite
+        run: python -m pip install -e '.[dev]'
+      - name: Lint and run privacy and fail-closed tests BEFORE genuine source data
+        run: |
+          python -m ruff check \
+            networkpulse/evaluation/iot_sfc_v7_provenance_sample.py \
+            tests/test_iot_sfc_v7_provenance_sample.py
+          python -m pytest -q tests/test_iot_sfc_v7_provenance_sample.py \
+            tests/test_iot_sfc_v7_conn_adapter.py
+      - name: Download ONLY preregistered authentic v7 ZIP and verify exact SHA
+        env:
+          ORIGINAL_ZIP_URL: https://zenodo.org/records/23371775/files/iot_dataset_v7.zip?download=1
+          PINNED_SHA256: 070b1356e5bd296e584109fae79139cfe0f20ff4790f69e42994d67362cb9f62
+        run: |
+          set -euo pipefail
+          mkdir -p private-source aggregate-evidence
+          curl -fLSs --retry 2 --retry-delay 5 --connect-timeout 30 \
+            --max-time 1500 --output private-source/iot_dataset_v7.zip "$ORIGINAL_ZIP_URL"
+          test "$(stat -c '%s' private-source/iot_dataset_v7.zip)" = "776500807"
+          test "$(sha256sum private-source/iot_dataset_v7.zip | cut -d ' ' -f 1)" = "$PINNED_SHA256"
+          echo "Exact SHA-matched original source; raw bytes retained only on isolated runner"
+      - name: Audit FIRST 100k raw rows for event-kind and unreviewed producer labels
+        run: |
+          set -euo pipefail
+          python -m networkpulse.evaluation.iot_sfc_v7_provenance_sample \
+            --archive private-source/iot_dataset_v7.zip \
+            --max-rows 100000 \
+            --report aggregate-evidence/iot-sfc-v7-source-provenance.json
+      - name: Fail closed on model-use or field-acceptance claims
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d = json.loads(Path(
+              "aggregate-evidence/iot-sfc-v7-source-provenance.json"
+          ).read_text())
+          assert d["original_archive_sha256"] == \
+              "070b1356e5bd296e584109fae79139cfe0f20ff4790f69e42994d67362cb9f62"
+          assert d["frozen_threshold"] == 0.20
+          assert d["aggregate"]["rows_inspected"] == 100000
+          assert d["aggregate"]["model_training_or_inference_performed"] is False
+          assert d["aggregate"]["raw_addresses_or_uids_recorded"] is False
+          assert d["target_labels_used_to_fit_tune_or_select_model"] is False
+          assert d["permission_document_not_independently_verified"] is True
+          assert d["model_scored"] is False
+          assert d["operational_ml_acceptance"] == "NO_GO"
+          print("Honest source-only audit. Original frozen target model UNSCORED.")
+          PY
+      - name: Destroy original source bytes even after failure
+        if: always()
+        run: |
+          rm -f private-source/iot_dataset_v7.zip
+          test ! -e private-source/iot_dataset_v7.zip
+      - name: Save only aggregated provenance report, no raw flow rows
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iot-sfc-v7-100k-authentic-source-provenance-NO-SCORES
+          path: aggregate-evidence/iot-sfc-v7-source-provenance.json
+          if-no-files-found: ignore
+          retention-days: 14
