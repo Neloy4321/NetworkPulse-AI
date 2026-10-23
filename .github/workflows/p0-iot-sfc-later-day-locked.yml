@@ -1,0 +1,104 @@
+name: P0 locked ExtraTrees later-day generalization check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'networkpulse/evaluation/iot_sfc_locked_later_days.py'
+      - 'tests/test_iot_sfc_locked_later_days.py'
+      - 'docs/P0_IOT_SFC_EXTRA_TREES_LATER_DAY_TEST.md'
+      - 'docs/P0_IOT_SFC_V7_APR15_17_LOCKED_RECALL_FAILURE.json'
+      - 'docs/P0_ML_ACCEPTANCE_RESULT_AND_GATES_20261023.md'
+      - '.github/workflows/p0-iot-sfc-later-day-locked.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'networkpulse/evaluation/iot_sfc_locked_later_days.py'
+      - 'tests/test_iot_sfc_locked_later_days.py'
+      - 'docs/P0_IOT_SFC_EXTRA_TREES_LATER_DAY_TEST.md'
+      - '.github/workflows/p0-iot-sfc-later-day-locked.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  freeze-and-real-april15-17:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install model runtime and tests
+        run: python -m pip install -e '.[dev]'
+      - name: Lint/verify numerical time-fence and no false-signature tests
+        run: |
+          python -m ruff check \
+            networkpulse/evaluation/iot_sfc_locked_later_days.py \
+            tests/test_iot_sfc_locked_later_days.py
+          python -m pytest -q tests/test_iot_sfc_locked_later_days.py
+      - name: Download EXACT existing training artifact without retraining
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p private-model aggregate
+          gh run download 39921326610 --repo Neloy4321/NetworkPulse-AI \
+            --name iotsfc-v7-timefenced-unsigned-RESEARCH-model \
+            --dir private-model
+          test -f private-model/unsigned-research-day-fenced.joblib
+          test "$(sha256sum private-model/unsigned-research-day-fenced.joblib | cut -d' ' -f1)" = \
+            ecc320bc693481fc45b143b48ffbebcb117899e888e4687930f3361501af6fa1
+      - name: Acquire real exact original IoT-SFC from authoritative record
+        run: |
+          set -euo pipefail
+          mkdir -p private-archive
+          curl -fLSs --retry 2 --retry-delay 7 --connect-timeout 30 \
+            --max-time 1400 \
+            -o private-archive/iot_dataset_v7.zip \
+            'https://zenodo.org/records/23371775/files/iot_dataset_v7.zip?download=1'
+          test "$(stat -c %s private-archive/iot_dataset_v7.zip)" = 776500807
+          test "$(sha256sum private-archive/iot_dataset_v7.zip | cut -d' ' -f1)" = \
+            070b1356e5bd296e584109fae79139cfe0f20ff4790f69e42994d67362cb9f62
+      - name: Score April15-17 candidate without tuning or raw data export
+        run: |
+          OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=2 \
+          python -m networkpulse.evaluation.iot_sfc_locked_later_days \
+            --archive private-archive/iot_dataset_v7.zip \
+            --model private-model/unsigned-research-day-fenced.joblib \
+            --report aggregate/iot-sfc-apr15-17-same-lab-locked.json
+      - name: Check research-only output cannot promote unsigned model
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          d=json.loads(Path(
+              'aggregate/iot-sfc-apr15-17-same-lab-locked.json'
+          ).read_text())
+          assert d['frozen_unsigned_research_model_sha256'] == (
+              'ecc320bc693481fc45b143b48ffbebcb117899e888e4687930f3361501af6fa1'
+          )
+          assert d['fixed_cutoff'] == 0.9
+          assert d['trained_or_selected_on_apr15_17'] is False
+          assert d['producer_labels_independently_adjudicated'] is False
+          assert d['genuinely_independent_site'] is False
+          assert d['operational_ml_p0'] == 'NO_GO'
+          print('Additional future-day same-lab evidence; not field acceptance')
+          PY
+      - name: Destroy original dataset and unsigned code-executable model
+        if: always()
+        run: |
+          rm -f private-archive/iot_dataset_v7.zip
+          rm -f private-model/unsigned-research-day-fenced.joblib
+      - name: Retain ONLY aggregated date metrics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iotsfc-apr15-17-locked-extra-trees-aggregated-no-raw
+          path: aggregate/iot-sfc-apr15-17-same-lab-locked.json
+          if-no-files-found: ignore
+          retention-days: 14
