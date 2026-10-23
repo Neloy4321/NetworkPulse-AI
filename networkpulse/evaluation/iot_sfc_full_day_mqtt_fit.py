@@ -190,7 +190,14 @@ def run(archive: Path, original_path: Path):
     flows, labels, families, ledger = buckets_from_original(archive)
     vectorizer, model, cutoff, choice = repair.fit_source(flows, labels, families)
     del flows, labels, families
+    # This replays the already-exposed laboratory slice. The scorer also emits
+    # a diagnostic-only OR with the unchanged historical frozen model to
+    # measure complementary errors; neither rule is selected or certified here.
     stress = replay_exposed(archive, original, vectorizer, model, cutoff)
+    fused = stress["frozen_or_repair_research_only"]
+    if (fused["selection_is_independently_qualified"] is not False
+            or fused["already_exposed_same_lab_labels"] is not True):
+        raise ValueError("Research-only OR must never be marked qualified")
     return {
         "status": "P0_FULL_SOURCE_DATE_FAMILY_MQTT_RESEARCH_STRESS_ONLY",
         "original_source_sha256": locked.TARGET_SHA,
