@@ -25,7 +25,7 @@ from sklearn.feature_extraction import DictVectorizer
 
 from networkpulse.evaluation.iot_sfc_domain_adapt_fpr import (
     EVAL_END, MODEL_OPTIONS, FPR_DEV_UPPER_CAP,
-    CUTOFFS, make_model, confusion, _limits,
+    CUTOFFS, make_model, _limits,
     flow_id, group_key, read_partition,
 )
 from networkpulse.evaluation.iot_sfc_frozen_score import (
