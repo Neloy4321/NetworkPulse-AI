@@ -1,0 +1,88 @@
+name: P0 IoT-SFC source-only MQTT repair candidate stress
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'networkpulse/evaluation/iot_sfc_mqtt_repair.py'
+      - 'tests/test_iot_sfc_mqtt_repair.py'
+      - '.github/workflows/p0-iot-sfc-mqtt-repair.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  candidate-source-fit-dev-and-exposed-stress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install required ML runtime
+        run: python -m pip install -e '.[dev]'
+      - name: Validate research-only repair and immutable regression tests
+        run: |
+          python -m ruff check networkpulse/evaluation/iot_sfc_mqtt_repair.py tests/test_iot_sfc_mqtt_repair.py
+          python -m pytest -q tests/test_iot_sfc_mqtt_repair.py tests/test_iot_sfc_locked_later_days.py
+      - name: Restore original SHA-verified research candidate for comparison
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p private-model aggregate
+          gh run download 39921326610 --repo Neloy4321/NetworkPulse-AI \
+            --name iotsfc-v7-timefenced-unsigned-RESEARCH-model \
+            --dir private-model
+          test "$(sha256sum private-model/unsigned-research-day-fenced.joblib | cut -d' ' -f1)" = \
+            ecc320bc693481fc45b143b48ffbebcb117899e888e4687930f3361501af6fa1
+      - name: Retrieve original laboratory dataset with immutable SHA
+        run: |
+          set -euo pipefail
+          mkdir -p private-archive
+          curl -fLSs --retry 2 --retry-delay 7 --connect-timeout 30 \
+            --max-time 1400 \
+            -o private-archive/iot_dataset_v7.zip \
+            'https://zenodo.org/records/23371775/files/iot_dataset_v7.zip?download=1'
+          test "$(stat -c %s private-archive/iot_dataset_v7.zip)" = 776500807
+          test "$(sha256sum private-archive/iot_dataset_v7.zip | cut -d' ' -f1)" = \
+            070b1356e5bd296e584109fae79139cfe0f20ff4790f69e42994d67362cb9f62
+      - name: Real MQTT-aware model fit on source FIT and group-disjoint DEV
+        run: |
+          OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=2 \
+          python -m networkpulse.evaluation.iot_sfc_mqtt_repair \
+            --archive private-archive/iot_dataset_v7.zip \
+            --original-model private-model/unsigned-research-day-fenced.joblib \
+            --report aggregate/iotsfc-mqtt-repair-exposed-research.json
+      - name: No acceptance or secret/public model leakage
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('aggregate/iotsfc-mqtt-repair-exposed-research.json').read_text())
+          assert result['exposed_stress']['original_locked_comparison'] == {
+              'tn': 155221, 'fp': 119, 'fn': 432, 'tp': 590
+          }
+          assert result['new_independent_test_used'] is False
+          assert result['attack_labels_independently_adjudicated'] is False
+          assert result['model_exported_or_signed'] is False
+          assert result['operational_ml_p0'] == 'NO_GO'
+          print('Source-trained research candidate compared on exposed same-lab stress only')
+          PY
+      - name: Delete original raw data and executable model
+        if: always()
+        run: |
+          rm -f private-archive/iot_dataset_v7.zip
+          rm -f private-model/unsigned-research-day-fenced.joblib
+      - name: Upload only numerical research aggregates
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p0-mqtt-feature-repair-exposed-research-aggregate-only
+          path: aggregate/iotsfc-mqtt-repair-exposed-research.json
+          if-no-files-found: ignore
+          retention-days: 14
