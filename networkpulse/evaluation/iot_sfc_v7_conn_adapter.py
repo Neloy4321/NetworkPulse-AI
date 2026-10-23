@@ -5,7 +5,6 @@ or claim independent reviewer approval. Original 87-column header is pinned.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -88,7 +87,7 @@ def conn_log_to_flow_v2(row: Mapping[str, str]) -> FlowV2:
     # cannot accidentally reach the frozen model's vectorizer as features.
     try:
         flow = from_zeek_v2(source)
-    except (ValueError, KeyError, TypeError, OverflowError) as exc:
+    except (ValueError, KeyError, TypeError, OverflowError):
         raise RowNotEligible("invalid_native_zeek_conn_values") from None
     if flow.label is not None:
         raise RowNotEligible("target_label_leaked_into_inference")
