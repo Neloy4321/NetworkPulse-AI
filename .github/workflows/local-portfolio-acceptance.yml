@@ -1,0 +1,47 @@
+name: Local portfolio acceptance (synthetic demo only)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/local_portfolio_acceptance.py'
+      - 'tests/test_local_portfolio_acceptance.py'
+      - 'docs/LOCAL_PORTFOLIO_ACCEPTANCE.md'
+      - '.github/workflows/local-portfolio-acceptance.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/local_portfolio_acceptance.py'
+      - 'tests/test_local_portfolio_acceptance.py'
+      - '.github/workflows/local-portfolio-acceptance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  local-synthetic-demo-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install local demo and test dependencies
+        run: python -m pip install -e '.[dev]'
+      - name: Static checks for the acceptance gate
+        run: python -m ruff check scripts/local_portfolio_acceptance.py tests/test_local_portfolio_acceptance.py
+      - name: Execute local portfolio acceptance contract tests
+        run: python -m pytest -q tests/test_local_portfolio_acceptance.py
+      - name: Produce genuine isolated synthetic demo report
+        run: python scripts/local_portfolio_acceptance.py --report "$RUNNER_TEMP/local-portfolio-report.json"
+      - name: Retain aggregate-only demo evidence (never model or SQLite files)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-portfolio-acceptance-report
+          path: ${{ runner.temp }}/local-portfolio-report.json
+          if-no-files-found: ignore
+          retention-days: 14
